@@ -52,6 +52,7 @@ targets:
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGNING_ALLOWED: NO
         ENABLE_PREVIEWS: NO
+        ENABLE_DEBUG_DYLIB: NO
         SWIFT_EMIT_LOC_STRINGS: NO
     dependencies:
       - package: GRDB
