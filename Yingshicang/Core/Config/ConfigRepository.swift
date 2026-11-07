@@ -143,6 +143,17 @@ enum ConfigParser {
             return list.compactMap { storeFromDictionary($0) }
         }
         if let root = object as? [String: Any] {
+            // TVBox 多仓入口：`{"urls":["...","..."]}` 纯字符串数组，
+            // 每个 URL 就是一条线路，整体作为一个仓返回。
+            if let urls = root["urls"] as? [String] {
+                let lines: [ConfigLine] = urls.enumerated().compactMap { pair -> ConfigLine? in
+                    let url = pair.element.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !url.isEmpty else { return nil }
+                    return ConfigLine(name: "线路\(pair.offset + 1)", url: url)
+                }
+                guard !lines.isEmpty else { return [] }
+                return [ConfigStore(name: "默认仓", url: lines[0].url, lines: lines)]
+            }
             if let urls = root["urls"] as? [[String: Any]] {
                 return urls.compactMap { storeFromDictionary($0) }
             }

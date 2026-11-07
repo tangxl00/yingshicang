@@ -40,10 +40,10 @@ enum HTMLRule {
         return fields
     }
 
-    /// 取出第 index 段（越界返回空串，规则段数不足时调用方按「没有该字段」处理）。
+    /// 取出第 index 段（越界回退首段，与 U01Gate JS driver 的 field() 行为一致）。
     static func field(_ rule: String, at index: Int) -> String {
         let parts = splitFields(rule)
-        guard index < parts.count else { return "" }
+        guard index < parts.count else { return parts.first ?? "" }
         return parts[index].trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
