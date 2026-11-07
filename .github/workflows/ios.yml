@@ -92,9 +92,12 @@ jobs:
           # 而且可能挑到屏幕尺寸/系统版本不同的设备，让布局类断言随镜像变化。
           # 改为固定优先级的确定性选择：按写死的机型名逐个匹配，取第一个真实存在的；
           # 都不存在时才按同一优先级机型 + 最新 iOS runtime 创建。
-          CANDIDATES="iPhone 16 iPhone 15 iPhone 14 iPhone SE (3rd generation)"
+          # 注意：机型名含空格（"iPhone 16"），必须用 bash 数组 +
+          # "${CANDIDATES[@]}" 逐元素遍历；写成 `for name in $CANDIDATES` 会被词拆分
+          # 变成 `iPhone` 与 `16` 两个 token，导致永远匹配不到（本轮 CI 实撞）。
+          CANDIDATES=("iPhone 16" "iPhone 17" "iPhone 16 Pro" "iPhone 15" "iPhone SE (3rd generation)")
           UDID=""
-          for name in $CANDIDATES; do
+          for name in "${CANDIDATES[@]}"; do
             UDID=$(xcrun simctl list devices available --json \
               | jq -r --arg n "$name" \
                 '[.devices[][] | select(.isAvailable == true) | select(.name == $n)] | first | .udid // empty')
@@ -112,7 +115,7 @@ jobs:
               echo "No available iOS runtime on this runner" >&2
               exit 1
             fi
-            for name in $CANDIDATES; do
+            for name in "${CANDIDATES[@]}"; do
               DT=$(xcrun simctl list devicetypes --json \
                 | jq -r --arg n "$name" '[.devicetypes[] | select(.name == $n)] | first | .identifier // empty')
               if [ -n "$DT" ] && UDID=$(xcrun simctl create "$name" "$DT" "$RUNTIME_ID" 2>/dev/null); then
