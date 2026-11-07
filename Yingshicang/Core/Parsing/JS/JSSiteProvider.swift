@@ -248,10 +248,10 @@ final class JSSiteProvider: SiteProvider {
         var items: [VodItem] = []
         for raw in array {
             guard let dict = raw as? [String: Any] else { continue }
-            let name = stringOf(dict, ["vod_name", "name", "title"])
-            let pic = stringOf(dict, ["vod_pic", "pic", "img"])
-            let remark = stringOf(dict, ["vod_remarks", "remarks", "note"])
-            let id = stringOf(dict, ["vod_id", "id", "url", "link"])
+            let name = Self.stringOf(dict, ["vod_name", "name", "title"])
+            let pic = Self.stringOf(dict, ["vod_pic", "pic", "img"])
+            let remark = Self.stringOf(dict, ["vod_remarks", "remarks", "note"])
+            let id = Self.stringOf(dict, ["vod_id", "id", "url", "link"])
             guard !name.isEmpty || !id.isEmpty else { continue }
             items.append(VodItem(vodId: id.isEmpty ? name : id,
                                  vodName: name,
@@ -279,13 +279,13 @@ final class JSSiteProvider: SiteProvider {
         if let list = dict["list"] as? [[String: Any]], let first = list.first { media = first }
         else if let list = dict["data"] as? [[String: Any]], let first = list.first { media = first }
 
-        let name = stringOf(media, ["vod_name", "name", "title"])
-        let pic = stringOf(media, ["vod_pic", "pic", "img"])
-        let content = stringOf(media, ["vod_content", "content", "desc"])
-        let score = stringOf(media, ["vod_score", "score"])
-        let remarks = stringOf(media, ["vod_remarks", "remarks"])
-        let playFrom = stringOf(media, ["vod_play_from", "play_from"])
-        let playUrl = stringOf(media, ["vod_play_url", "play_url"])
+        let name = Self.stringOf(media, ["vod_name", "name", "title"])
+        let pic = Self.stringOf(media, ["vod_pic", "pic", "img"])
+        let content = Self.stringOf(media, ["vod_content", "content", "desc"])
+        let score = Self.stringOf(media, ["vod_score", "score"])
+        let remarks = Self.stringOf(media, ["vod_remarks", "remarks"])
+        let playFrom = Self.stringOf(media, ["vod_play_from", "play_from"])
+        let playUrl = Self.stringOf(media, ["vod_play_url", "play_url"])
 
         var tabs = playFrom.isEmpty ? [] : playFrom.split(separator: "$").map { String($0) }
         let groups = Self.splitPlayGroups(playUrl)
@@ -344,15 +344,15 @@ final class JSSiteProvider: SiteProvider {
         var result: [SiteCategory] = []
         for raw in array {
             guard let dict = raw as? [String: Any] else { continue }
-            let id = stringOf(dict, ["type_id", "id", "typeId"])
-            let name = stringOf(dict, ["type_name", "name", "title"])
+            let id = Self.stringOf(dict, ["type_id", "id", "typeId"])
+            let name = Self.stringOf(dict, ["type_name", "name", "title"])
             if name.isEmpty && id.isEmpty { continue }
             result.append(SiteCategory(id: id.isEmpty ? name : id, name: name))
         }
         return result
     }
 
-    private func stringOf(_ dict: [String: Any], _ keys: [String]) -> String {
+    private static func stringOf(_ dict: [String: Any], _ keys: [String]) -> String {
         for key in keys {
             if let value = dict[key] as? String, !value.isEmpty { return value }
             if let value = dict[key] as? NSNumber { return value.stringValue }
