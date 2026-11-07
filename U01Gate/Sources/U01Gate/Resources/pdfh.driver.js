@@ -18,6 +18,8 @@ globalThis.pdfh = function (html, rule) {
       var attr = node.attr(step);
       return attr === undefined ? '' : attr;
     }
+    // drpy 宿主语义：body / html 指文档根（而非后代选择器）
+    if (step === 'body' || step === 'html') { node = scope.root(); continue; }
     // || 并列候选：任一命中即采用
     var alts = step.split('||');
     var found = null;
@@ -40,6 +42,7 @@ globalThis.pdfa = function (html, rule) {
   for (var i = 0; i < parts.length; i++) {
     var step = parts[i].trim();
     if (!step) continue;
+    if (step === 'body' || step === 'html') { node = scope.root(); continue; }
     var hit = node.find(step);
     if (!hit || hit.length === 0) return [];
     node = hit.first();
