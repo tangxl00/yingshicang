@@ -216,7 +216,7 @@ final class APISiteProvider: SiteProvider {
                                              vodArea: "",
                                              vodType: "",
                                              vodRemarks: remarks,
-                                             siteKey: site.key,
+                                             siteKey: self.site.key,
                                              tabs: tabs,
                                              lists: groups,
                                              quality: quality)))
