@@ -126,7 +126,8 @@ enum LANPushService {
     /// 构造推送请求（纯函数，可测试）。
     static func makeRequest(to endpoint: LANSyncEndpoint, payload: BackupPayload) -> URLRequest? {
         guard let url = endpoint.pushURL,
-              let body = BackupPayload.encodeJSON(payload).data(using: .utf8) else { return nil }
+              let json = BackupPayload.encodeJSON(payload),
+              let body = json.data(using: .utf8) else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.httpBody = body
