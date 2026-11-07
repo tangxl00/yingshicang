@@ -63,13 +63,7 @@ final class JSSiteProvider: SiteProvider {
             var name = api
             if name.hasPrefix("assets://") { name = String(name.dropFirst("assets://".count)) }
             name = (name as NSString).lastPathComponent
-            if let path = Bundle.main.path(forResource: (name as NSString).deletingPathExtension,
-                                           ofType: (name as NSString).pathExtension,
-                                           inDirectory: "Rules") {
-                return try? String(contentsOfFile: path, encoding: .utf8)
-            }
-            // 打包时 Rules 目录以 folder reference 形式进入 bundle，实际位于 Rules/ 子目录。
-            if let path = Bundle.main.path(forResource: name, ofType: nil, inDirectory: "Rules") {
+            if let path = BundledScripts.resourcePath(named: name) {
                 return try? String(contentsOfFile: path, encoding: .utf8)
             }
             return nil
