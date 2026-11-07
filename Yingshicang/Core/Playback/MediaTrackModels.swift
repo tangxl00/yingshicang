@@ -79,7 +79,10 @@ enum MediaTrackEnumerator {
     /// 返回 nil 表示该类轨道为空（UI 应展示「无可用轨道」而不是空弹层）。
     static func highlightedIndex(in options: [MediaTrackOption], selectedIndex: Int?) -> Int? {
         guard !options.isEmpty else { return nil }
-        if let selected = selectedIndex, options.indices.contains(selected) { return selected }
+        if let selected = selectedIndex {
+            // 越界选中属于异常状态：不得崩、也不得误高亮（与「无选中」的默认项兜底区分开）。
+            return options.indices.contains(selected) ? selected : nil
+        }
         if let fallback = options.first(where: { $0.isDefault }) { return fallback.index }
         return options.first?.index
     }
