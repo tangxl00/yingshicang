@@ -606,6 +606,13 @@ final class BackupSheetViewController: CardDialogViewController {
 
     private let statusLabel = UILabel.make(size: 12, color: DesignTokens.Colors.text, lines: 0)
 
+    // 显式 override designated init：子类定义了 required init?(coder:)（本身是
+    // designated）后不再自动继承父类的 init(config:)，convenience init() 的
+    // self.init(config:) 委托必须有这个显式实现才可解析。
+    override init(config: Config) {
+        super.init(config: config)
+    }
+
     convenience init() {
         self.init(config: .init(title: "备份与恢复",
                                 height: DesignTokens.dp(DesignTokens.Metrics.backupSheetHeight),

@@ -58,7 +58,10 @@ final class IntroDialogViewController: CardDialogViewController {
     private var highlightIndex = 0
 
     private let searchField = UITextField()
-    private let exactButton = UIButton(type: .system)
+    private lazy var exactButton: UIButton = UIButton.capsule("精确",
+                                                              size: DesignTokens.Metrics.introSearchFont,
+                                                              height: DesignTokens.Metrics.introExactHeight,
+                                                              corner: 6)
     private let scrollView = UIScrollView()
     private let contentLabel = UILabel.make(size: DesignTokens.Metrics.previewDescFont,
                                             color: DesignTokens.Colors.text,
@@ -104,10 +107,7 @@ final class IntroDialogViewController: CardDialogViewController {
         searchField.heightAnchor.constraint(equalToConstant: DesignTokens.dp(DesignTokens.Metrics.introSearchHeight)).isActive = true
         fieldWrap.heightAnchor.constraint(equalToConstant: DesignTokens.dp(DesignTokens.Metrics.introSearchHeight)).isActive = true
 
-        exactButton = UIButton.capsule("精确",
-                                       size: DesignTokens.Metrics.introSearchFont,
-                                       height: DesignTokens.Metrics.introExactHeight,
-                                       corner: 6)
+        // exactButton 为 lazy var：首次访问（此处）时按精确按钮规格构建。
         exactButton.widthAnchor.constraint(equalToConstant: DesignTokens.dp(DesignTokens.Metrics.introExactWidth)).isActive = true
         exactButton.addAction(UIAction { [weak self] _ in
             self?.runSearch(exact: true)
