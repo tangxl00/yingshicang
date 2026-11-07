@@ -33,7 +33,7 @@ final class PlayResolver {
     /// 站点脚本引擎注册表（按站点隔离）。
     private let engines: JSEngineRegistry
 
-    init(transport: PlayTransport = LivePlayTransport(),
+    init(transport: PlayTransport = DefaultPlayTransport(),
          bundleProvider: @escaping () -> ConfigBundle = { ConfigRepository.shared.currentBundle },
          engines: JSEngineRegistry = .shared) {
         self.transport = transport
@@ -281,7 +281,9 @@ protocol PlayTransport {
     func get(_ url: String, completion: @escaping (HTTPResponse) -> Void)
 }
 
-struct LivePlayTransport: PlayTransport {
+/// 默认传输实现（URLSession）。原名 `LivePlayTransport`：直播模块移除后名字已不合语义，
+/// 改为通用命名，行为未变。
+struct DefaultPlayTransport: PlayTransport {
     func get(_ url: String, completion: @escaping (HTTPResponse) -> Void) {
         HTTPClient.shared.request(url, options: HTTPOptions()) { completion($0) }
     }

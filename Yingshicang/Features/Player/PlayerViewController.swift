@@ -8,7 +8,7 @@ import UIKit
 /// - 控制层：中央播放按钮 45dp，两侧 40dp 圆角按钮，底部进度条高 20dp
 ///   与时间文本（左右各一），右侧竖排 34dp 侧边按钮
 /// - 简介/剧集为底部上滑面板（TabLayout 25dp + ViewPager）
-final class PlayerViewController: UIViewController {
+final class PlayerViewController: SwipeBackViewController {
 
     private let detail: VodDetail
     private var episodes: [PlayEpisode]

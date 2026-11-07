@@ -1,14 +1,21 @@
 import UIKit
 
 /// 底部 Tab 栏的自绘实现（对应 mobile_home_tab.xml）。
-/// 尺寸全部来自布局：栏高 55pt（由外部约束）、paddingTop 5pt、5 等分、文字 12sp、
+/// 尺寸全部来自布局：栏高 55pt（由外部约束）、paddingTop 5pt、等分、文字 12sp、
 /// 图标在文字上方（原布局用 drawableTop），选中态改变图标与文字颜色。
+///
+/// **v2.0.50 build 21 按用户要求收敛为 3 个 Tab**（主页 / 历史·收藏 / 我的）：
+/// 「直播」「短视频」两项连同其页面一并移除，不再出现在此列表里。
 final class TabBarView: UIView {
 
-    /// Tab 文案与顺序严格照抄布局：「主页/直播/短视频/历史·收藏/我的」。
-    private let titles = ["主页", "直播", "短视频", "历史·收藏", "我的"]
+    /// Tab 文案与顺序（3 项；等分由 UIStackView .fillEqually 保证）。
+    /// 声明为 `static` 以便单测直接断言条数（`MainTabBarTests`）。
+    static let tabTitles = ["主页", "历史·收藏", "我的"]
     /// 图标用 SF Symbols 对齐原图标语义（原图标为位图，iOS 侧使用系统符号保持同一观感）。
-    private let icons = ["house.fill", "dot.radiowaves.left.and.right", "play.rectangle.fill", "clock.fill", "person.fill"]
+    static let tabIcons = ["house.fill", "clock.fill", "person.fill"]
+
+    private var titles: [String] { Self.tabTitles }
+    private var icons: [String] { Self.tabIcons }
 
     private var buttons: [UIButton] = []
     var onSelect: ((Int) -> Void)?

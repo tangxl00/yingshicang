@@ -31,11 +31,13 @@ final class APISiteProvider: SiteProvider {
             request.setValue(value, forHTTPHeaderField: key)
         }
         URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(.failure(.network(-1)))
+            // 传输层失败必须保留原始 NSURLError（历史缺陷：这里曾硬编码 .network(-1)，
+            // 而 -1 不是合法 HTTP 状态码，界面上会出现「网络请求失败（HTTP -1）」）。
+            guard let httpResponse = response as? HTTPURLResponse else {
+                completion(.failure(.transport(NetworkErrorMapper.describe(error))))
                 return
             }
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let code = httpResponse.statusCode
             guard code == 200, let data = data else {
                 completion(.failure(.network(code)))
                 return

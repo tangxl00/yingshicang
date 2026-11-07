@@ -296,18 +296,9 @@ enum DesignTokens {
         static let shopTitleFont: CGFloat = 18
         static let shopLoadingSize: CGFloat = 30
 
-        /// R-34 直播：paddingTop 37dp，logo 区宽 100dp 高 60dp，频道名 14sp，设置图标 36×44dp，EPG 行 alpha 0.8，分割线 0.5dp
-        static let livePaddingTop: CGFloat = 37
-        static let liveLogoWidth: CGFloat = 100
-        static let liveLogoHeight: CGFloat = 60
-        static let liveChannelFont: CGFloat = 14
-        static let liveSettingWidth: CGFloat = 36
-        static let liveSettingHeight: CGFloat = 44
-        static let liveSeparator: CGFloat = 0.5
-
-        /// R-35 直播设置：底部 2 按钮高 45dp
-        /// R-36 频道弹窗：底部比例条 44dp
-        static let liveScaleBarHeight: CGFloat = 44
+        // R-34 / R-35 / R-36 原为直播页度量（paddingTop / logo 区 / 频道名 / 设置图标 / 比例条）。
+        // 直播模块已按用户要求在 v2.0.50 build 21 移除，度量随页面一起删除，
+        // 见 KNOWN_DIFFERENCES.md「按用户要求移除的功能」。
 
         /// R-38 本地视频：项高 120dp，复选框 30dp，缩略 4:3，编辑条 50dp
         static let localItemHeight: CGFloat = 120

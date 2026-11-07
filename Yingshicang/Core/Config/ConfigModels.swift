@@ -141,40 +141,29 @@ struct ParseConfig: Codable, Equatable {
     }
 }
 
-/// 直播源。文档 4.1 只确认「直播地址」是独立 URL；
-/// 频道结构（分组 → 频道 → 多线路 + EPG）来自 R-34 的三列布局反证。
-struct LiveSourceConfig: Codable, Equatable {
-    var name: String
-    var url: String
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: FlexKey.self)
-        name = c.string("name") ?? ""
-        url = c.string("url") ?? ""
-    }
-}
-
 /// 配置文件的顶层结构。
 /// **顶层键名在需求文档 5.2 被标为待确认**（Java 解析器不可读）。
-/// 本工程按 TVBox 系的通行键名 `sites / parses / lives / flags / wallpaper` 解析，
+/// 本工程按 TVBox 系的通行键名 `sites / parses / flags / wallpaper` 解析，
 /// 同时兼容若干常见别名，并在「默认取值清单」中明确声明该推断。
+///
+/// **`lives` 字段自 v2.0.50 build 21 起不再纳入模型**：直播功能已按用户要求在真机验收后移除，
+/// 配置里的 `lives`（含 `type:0` 文本源、`group/channels/proxy://…` 重定向形态、`epg` 等）
+/// 作为未知键被 Codable 直接跳过，**既不参与任何业务，也不会导致解码失败**。
+/// 这一点由 `ConfigParserTests.testRealTop98ConfigIgnoresLives` 用真实 top98.json 结构固化。
 struct ConfigBundle: Codable, Equatable {
     var sites: [SiteConfig]
     var parses: [ParseConfig]
-    var lives: [LiveSourceConfig]
     var flags: [String]
     var wallpaper: String
     var spider: String
 
     init(sites: [SiteConfig] = [],
          parses: [ParseConfig] = [],
-         lives: [LiveSourceConfig] = [],
          flags: [String] = [],
          wallpaper: String = "",
          spider: String = "") {
         self.sites = sites
         self.parses = parses
-        self.lives = lives
         self.flags = flags
         self.wallpaper = wallpaper
         self.spider = spider
@@ -188,9 +177,6 @@ struct ConfigBundle: Codable, Equatable {
         parses = c.array("parses", ParseConfig.self)
             ?? c.array("parse", ParseConfig.self)
             ?? []
-        lives = c.array("lives", LiveSourceConfig.self)
-            ?? c.array("live", LiveSourceConfig.self)
-            ?? []
         flags = c.array("flags", String.self) ?? []
         wallpaper = c.string("wallpaper") ?? ""
         spider = c.string("spider") ?? ""
@@ -200,7 +186,6 @@ struct ConfigBundle: Codable, Equatable {
         var c = encoder.container(keyedBy: FlexKey.self)
         try c.encode(sites, forKey: FlexKey("sites"))
         try c.encode(parses, forKey: FlexKey("parses"))
-        try c.encode(lives, forKey: FlexKey("lives"))
         try c.encode(flags, forKey: FlexKey("flags"))
         try c.encode(wallpaper, forKey: FlexKey("wallpaper"))
         try c.encode(spider, forKey: FlexKey("spider"))

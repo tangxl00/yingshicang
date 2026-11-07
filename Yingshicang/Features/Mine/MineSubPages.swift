@@ -9,7 +9,7 @@ import UIKit
 
 /// 配置仓库页：仓列表 + 「添加」按钮；顶部提示条。
 /// 数据走 StoreHouseStore（tpc_stores / tpc_current_line）。
-final class StoreHouseViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+final class StoreHouseViewController: SwipeBackViewController, UITableViewDataSource, UITableViewDelegate {
 
     private let tableView = UITableView(frame: .zero, style: .plain)
     private let addButton = UIButton(type: .system)
@@ -145,7 +145,7 @@ final class StoreHouseViewController: UIViewController, UITableViewDataSource, U
 
 // MARK: - R-31 站点管理（屏蔽源）
 
-final class SiteManageViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+final class SiteManageViewController: SwipeBackViewController, UITableViewDataSource, UITableViewDelegate {
 
     private let searchField = UITextField()
     private let tableView = UITableView(frame: .zero, style: .plain)
@@ -231,7 +231,7 @@ final class SiteManageViewController: UIViewController, UITableViewDataSource, U
 
 // MARK: - R-32/R-33 设置列表（播放设置 / 个性化）
 
-final class SettingsListViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+final class SettingsListViewController: SwipeBackViewController, UITableViewDataSource, UITableViewDelegate {
 
     enum Kind { case player, personality }
 
@@ -408,7 +408,7 @@ final class SettingsListViewController: UIViewController, UITableViewDataSource,
 
 // MARK: - R-45 WebDAV 备份
 
-final class WebDavViewController: UIViewController {
+final class WebDavViewController: SwipeBackViewController {
 
     private let urlField = UITextField()
     private let accountField = UITextField()
@@ -482,7 +482,7 @@ final class WebDavViewController: UIViewController {
 
 /// R-46 本地数据（本地视频扫描）。iOS 侧受沙箱限制，只能访问用户通过
 /// 文件 App 放入 App Documents 的视频；提供说明。
-final class LocalDataViewController: UIViewController {
+final class LocalDataViewController: SwipeBackViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = DesignTokens.Colors.mainBg
@@ -495,7 +495,7 @@ final class LocalDataViewController: UIViewController {
 }
 
 /// R-47 检查更新：iOS 侧无自更新通道（App Store / 自签分发均不由 App 内控制）。
-final class UpdateCheckViewController: UIViewController {
+final class UpdateCheckViewController: SwipeBackViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = DesignTokens.Colors.mainBg
@@ -514,7 +514,7 @@ final class UpdateCheckViewController: UIViewController {
 }
 
 /// 关于页。
-final class AboutViewController: UIViewController {
+final class AboutViewController: SwipeBackViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = DesignTokens.Colors.mainBg
@@ -534,7 +534,7 @@ final class AboutViewController: UIViewController {
 }
 
 /// 互动交流占位（原 APK 为内置 H5 反馈页，依赖其服务端）。
-final class InteractionViewController: UIViewController {
+final class InteractionViewController: SwipeBackViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = DesignTokens.Colors.mainBg

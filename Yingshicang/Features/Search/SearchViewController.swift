@@ -3,7 +3,7 @@ import UIKit
 /// R-04 搜索页（全屏 present）。AXML `mobile_search_activity`：
 /// 顶部搜索框（高 40dp、圆角 22dp 胶囊）+ 返回；内容区展示
 /// ① 搜索历史（含「清空」）② 热门搜索 ③ 搜索结果列表。
-final class SearchViewController: UIViewController, UITextFieldDelegate {
+final class SearchViewController: SwipeBackViewController, UITextFieldDelegate {
 
     private let backButton = UIButton(type: .system)
     private let field = UITextField()

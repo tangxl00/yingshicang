@@ -7,7 +7,7 @@ import UIKit
 /// - 顶部信息区：左侧海报 104×140dp（比例 104:140），右侧片名、评分 36sp、
 ///   简介（最多 4 行）、来源、类型标签（圆角）
 /// - 下部 TabLayout（线路切换）+ ViewPager：每页为剧集网格，列数 4
-final class DetailViewController: UIViewController {
+final class DetailViewController: SwipeBackViewController {
 
     private let item: VodItem
     private let provider: SiteProvider?

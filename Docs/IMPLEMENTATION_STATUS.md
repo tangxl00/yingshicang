@@ -46,10 +46,10 @@
 | R-31 | 添加 / 扫码快捷弹窗 | 部分 | 「配置」入口已通；扫码入口未实现（无摄像头） |
 | R-32 | 摇一摇推荐 | 未实现 | 无摇一摇与随机推荐 |
 | R-33 | 每日赞赏 | 未实现 | 无运营弹窗 |
-| R-34 | 直播 Tab | 已实现 | `Features/Live/LiveViewController.swift` |
-| R-35 | 直播设置弹窗 | 已实现 | 同上 `openLiveSettings` |
-| R-36 | 直播频道选择弹窗 | 部分 | 频道列表可切台；缺三列联动的分组/频道/线路布局 |
-| R-37 | 直播控制层 | 部分 | 有直播控制条基础；尺寸未走 `vs_/ts_` 缩放体系 |
+| R-34 | 直播 Tab | 按用户要求移除 | v2.0.50 build 21 真机验收后移除（`Features/Live/` 整目录删除，Tab 5→3），见 KNOWN_DIFFERENCES「按用户要求移除的功能」 |
+| R-35 | 直播设置弹窗 | 按用户要求移除 | 随 R-34 一并删除 |
+| R-36 | 直播频道选择弹窗 | 按用户要求移除 | 随 R-34 一并删除 |
+| R-37 | 直播控制层 | 按用户要求移除 | 随 R-34 一并删除 |
 | R-38 | 本地视频 | 平台级不支持 | iOS 沙箱不可扫描文件系统（见 `KNOWN_DIFFERENCES.md`） |
 | R-39 | 网盘 | 未实现 | 无网盘模块 |
 | R-40 | 应用列表 | 未实现 | 无已安装应用列表 |
@@ -75,7 +75,7 @@
 
 | 编号 | 功能 | 状态 | 落地位置 / 说明 |
 | --- | --- | --- | --- |
-| F-01 | 配置源接入 | 已实现 | `Core/Config/ConfigRepository.swift`：JSON + 容错 JSON 解析，`sites/parses/lives/flags/wallpaper` |
+| F-01 | 配置源接入 | 已实现 | `Core/Config/ConfigRepository.swift`：JSON + 容错 JSON 解析，`sites/parses/flags/wallpaper`（`lives` 自 build 21 起随直播移除，作为未知键忽略） |
 | F-02 | 多仓与线路管理 | 已实现 | `Core/Config/StoreHouseStore.swift`，仓→线路嵌套持久化 |
 | F-03 | 分类浏览 | 已实现 | `Core/Parsing/SiteProvider.swift` + `HTMLSiteProvider`/`JSSiteProvider` 分类与分页 |
 | F-04 | 筛选 | 部分 | 支持分类/筛选维度取值，缺筛选弹层 UI 与「重置」流程 |
@@ -91,7 +91,7 @@
 | F-14 | 倍速播放 | 已实现 | `MineSubPages.pickRate` |
 | F-15 | 收藏 | 已实现 | `Core/Storage/FavoriteStore.swift` |
 | F-16 | 播放历史 | 已实现 | `Core/Storage/HistoryStore.swift`，续播定位 |
-| F-17 | 直播 | 部分 | 直播源解析与播放已通；EPG 与多线路完整联动未实现 |
+| F-17 | 直播 | 按用户要求移除 | v2.0.50 build 21 真机验收后移除：页面、解析与播放链路全删，`ConfigBundle.lives` 字段移除（配置含 `lives` 时静默忽略不报错） |
 | F-18 | 局域网同步 | 未实现 | 无局域网通道 |
 | F-19 | 备份还原 | 部分 | 凭据存储已通；备份包上传下载未实现 |
 | F-20 | 下载与投屏 | 未实现 | DLNA 平台级不支持；下载任务管理未实现 |
@@ -108,7 +108,7 @@
 | R-44 扫码页叠加层 | 未实现 | 无摄像头 |
 | R-04 搜索防抖与联想 | 300ms 防抖，回车触发搜索 | 规格未给节流时长，取工程惯例 |
 | R-22 历史长按删除 | 长按直接删除，无二次确认 | 布局无确认控件 |
-| F-01 配置顶层键名 | `sites` / `parses` / `lives` / `flags` / `wallpaper` | 由界面与模板反证 |
+| F-01 配置顶层键名 | `sites` / `parses` / `flags` / `wallpaper`（`lives` 已随直播移除） | 由界面与模板反证 |
 | F-02 仓→线路本地结构 | UserDefaults 键 `tpc_stores` | 与 Android 实测键名对齐 |
 | F-16 历史合并规则 | 按「片名 + 来源」合并 | 开关名可见、规则不可读，取语义最小实现 |
 | F-19 备份范围 | 未实现 | — |

@@ -91,7 +91,7 @@ final class ConfigParserTests: XCTestCase {
         XCTAssertEqual(bundle.sites.count, 2)
         XCTAssertEqual(bundle.sites[0].key, "aa")
         XCTAssertEqual(bundle.sites[1].type, 1)
-        XCTAssertEqual(bundle.lives.count, 1)
+        // `lives` 已按用户要求随直播模块移除：作为未知键被跳过，不参与模型。
         XCTAssertEqual(bundle.parses.count, 1)
     }
 
@@ -135,27 +135,6 @@ final class ConfigParserTests: XCTestCase {
         """
         let bundle = ConfigRepository.parse(text: text)
         XCTAssertEqual(bundle.sites[0].searchUrl, "/search?wd={wd}")
-    }
-}
-
-/// 直播源文本解析（`频道名$地址`）。
-final class LiveParserTests: XCTestCase {
-
-    func testParseChannels() {
-        let text = """
-        #EXTM3U 头部忽略
-        央视一台,https://cctv1.example.com/live.m3u8
-        央视二台$https://cctv2.example.com/live.m3u8$备用线路
-        //注释行
-        卫视一台$https://ws1.example.com/index.m3u8
-        坏行没有分隔符
-        """
-        let channels = LiveParser.parse(text: text, sourceName: "测试源")
-        XCTAssertEqual(channels.count, 2)
-        XCTAssertEqual(channels[0].name, "央视二台")
-        XCTAssertEqual(channels[0].url, "https://cctv2.example.com/live.m3u8", "多线路取第一条")
-        XCTAssertEqual(channels[1].name, "卫视一台")
-        XCTAssertEqual(channels[1].sourceName, "测试源")
     }
 }
 

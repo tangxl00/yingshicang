@@ -59,17 +59,22 @@ final class ConfigRepository {
         HTTPClient.shared.request(urlString) { [weak self] response in
             guard let self = self else { return }
             guard response.ok, !response.content.isEmpty else {
-                DispatchQueue.main.async { completion(.failure(.http(response.status))) }
+                // 透出真实原因：传输层失败带原始 NSURLError，HTTP 失败带真实状态码。
+                let error = ConfigError.from(response)
+                DispatchQueue.main.async { completion(.failure(error)) }
                 return
             }
-            let parsed = ConfigParser.parse(text: response.content)
-            if !parsed.sites.isEmpty || !parsed.lives.isEmpty || !parsed.parses.isEmpty {
-                self.store(bundle: parsed, sourceURL: urlString)
+            switch ConfigParser.parseResult(text: response.content) {
+            case .success(let parsed):
+                if !parsed.sites.isEmpty || !parsed.parses.isEmpty {
+                    self.store(bundle: parsed, sourceURL: urlString)
+                }
+                // 结构合法但没有站点：仍算成功（用户可能贴了个空仓）。
                 DispatchQueue.main.async { completion(.success(parsed)) }
-                return
+            case .failure(let failure):
+                // 结构/解码失败必须透出真实原因，不再静默成「成功但没内容」。
+                DispatchQueue.main.async { completion(.failure(.decode(failure.message))) }
             }
-            // 配置本身合法但内容为空：仍算成功（用户可能贴了个空仓）。
-            DispatchQueue.main.async { completion(.success(parsed)) }
         }
     }
 
@@ -96,38 +101,111 @@ final class ConfigRepository {
 
     enum ConfigError: Error, LocalizedError {
         case emptyURL
+        /// 拿到了真实 HTTP 响应但非 2xx：携带真实状态码。
         case http(Int)
+        /// 传输层失败：没拿到 HTTP 响应，携带原始 NSURLError（绝不伪装成 500）。
+        case transport(TransportFailure)
         case decode(String)
 
         var errorDescription: String? {
             switch self {
             case .emptyURL: return "配置地址为空"
-            case .http(let status): return "配置拉取失败（HTTP \(status)）"
+            case .http(let status):
+                return status > 0 ? "配置拉取失败（HTTP \(status)）" : "配置拉取失败（服务端未返回状态码）"
+            case .transport(let failure):
+                return "配置拉取失败（\(failure.displayText)\(NetworkErrorMapper.hint(for: failure))）"
             case .decode(let detail): return "配置格式无法解析：\(detail)"
             }
+        }
+
+        /// 由 HTTPResponse 归一，供 load 使用（与 SiteError.from 同一语义）。
+        static func from(_ response: HTTPResponse) -> ConfigError {
+            if let transport = response.transport { return .transport(transport) }
+            return .http(response.status)
         }
     }
 }
 
 /// 配置文本 → ConfigBundle。
 enum ConfigParser {
-    static func parse(text: String) -> ConfigBundle {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return .init() }
 
-        // 直接 JSON
-        if let data = trimmed.data(using: .utf8),
-           let bundle = try? JSONDecoder().decode(ConfigBundle.self, from: data) {
-            return bundle
+    /// 解析失败的**真实原因**（不再静默返回空 bundle 让上层误判成「加载成功但没内容」）。
+    enum Failure: Error, Equatable {
+        /// 文本为空。
+        case emptyText
+        /// 能当 JSON 读，但顶层结构与配置格式不符（例如是纯数组/字符串）。
+        case wrongShape(String)
+        /// 结构里有 `sites` 但一个都没解出来（说明站点字段与解码器不匹配）。
+        case sitesUndecodable(String)
+        /// 既不是合法 JSON，也不是可容错的 JSON。
+        case invalidJSON(String)
+
+        var message: String {
+            switch self {
+            case .emptyText: return "配置内容为空"
+            case .wrongShape(let detail): return "配置顶层结构不符：\(detail)"
+            case .sitesUndecodable(let detail): return "站点字段无法解码：\(detail)"
+            case .invalidJSON(let detail): return "不是合法 JSON：\(detail)"
+            }
         }
-        // 去 BOM / 注释 / 尾逗号后再试
+    }
+
+    /// 可诊断的解析入口。`load` 用它，把真实原因透出到界面。
+    ///
+    /// 顺序：能解码且**解出了内容** → 成功；否则做结构诊断，给出真实原因。
+    /// 关键点：`ConfigBundle` 是宽容解码，任何 JSON 对象都能"解码成功"成空 bundle，
+    /// 所以不能只看「解码有没有抛错」，必须再看「解出来的东西是不是真的配置」。
+    static func parseResult(text: String) -> Result<ConfigBundle, Failure> {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .failure(.emptyText) }
+
         let cleaned = stripJSONNoise(trimmed)
-        if let data = cleaned.data(using: .utf8),
-           let bundle = try? JSONDecoder().decode(ConfigBundle.self, from: data) {
-            return bundle
+        // 1) 直接解码；2) 去 BOM / 注释 / 尾逗号后再试。
+        for candidate in [trimmed, cleaned] {
+            guard let bundle = decode(candidate) else { continue }
+            if !bundle.sites.isEmpty || !bundle.parses.isEmpty { return .success(bundle) }
+            // 解出来是空的：要么真是空仓，要么这份文本根本不是配置 —— 交给结构诊断判定。
+            if let failure = analyze(cleaned) { return .failure(failure) }
+            return .success(bundle)
         }
-        // 聚合仓：`[{"name":..,"url":..}, ...]` 需要再拉取，此处返回空并由调用方转成多仓。
+        return .failure(analyze(cleaned) ?? .invalidJSON("无法解析为 JSON"))
+    }
+
+    /// 兼容旧签名：解析不出内容时返回空 bundle（仅测试与非关键路径使用）。
+    static func parse(text: String) -> ConfigBundle {
+        if case .success(let bundle) = parseResult(text: text) { return bundle }
         return .init()
+    }
+
+    private static func decode(_ text: String) -> ConfigBundle? {
+        guard let data = text.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(ConfigBundle.self, from: data)
+    }
+
+    /// 结构诊断：返回 nil 表示「确实是一份合法的空配置」，返回 Failure 表示真实原因。
+    private static func analyze(_ cleaned: String) -> Failure? {
+        guard let data = cleaned.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
+            let head = String(cleaned.prefix(60)).replacingOccurrences(of: "\n", with: " ")
+            return .invalidJSON("以「\(head)」开头的内容不是 JSON 对象或数组")
+        }
+        guard let root = object as? [String: Any] else {
+            return .wrongShape("顶层是 JSON 数组或标量，不是配置对象")
+        }
+        if let rawSites = root["sites"] ?? root["api_site"] {
+            if let list = rawSites as? [Any], !list.isEmpty {
+                return .sitesUndecodable("sites 有 \(list.count) 项，但没有任何一项满足站点字段约束")
+            }
+            return nil                    // sites 是空数组 / null：合法的空仓
+        }
+        if root["urls"] != nil || root["stores"] != nil {
+            return .wrongShape("这是多仓索引文件（urls/stores），不是单仓配置文件")
+        }
+        if root["parses"] != nil || root["flags"] != nil
+            || root["wallpaper"] != nil || root["spider"] != nil {
+            return nil                    // 有配置字段但没有 sites：合法的空仓
+        }
+        return .wrongShape("JSON 对象缺少 sites/parses 等配置字段")
     }
 
     /// 解析多仓索引文件（R-29 的仓列表来源）。

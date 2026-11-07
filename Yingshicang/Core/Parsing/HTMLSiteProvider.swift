@@ -35,7 +35,7 @@ final class HTMLSiteProvider: SiteProvider {
         let url = baseHost
         HTTPClient.shared.request(url, options: options()) { [weak self] response in
             guard let self = self else { return }
-            guard response.ok else { completion(.failure(.network(response.status))); return }
+            guard response.ok else { completion(.failure(.from(response))); return }
             let items = self.parseList(response.content, rule: rule)
             SiteCache.shared.set(key, items)
             completion(.success(items))
@@ -71,7 +71,7 @@ final class HTMLSiteProvider: SiteProvider {
         }
         HTTPClient.shared.request(baseHost, options: options()) { [weak self] response in
             guard let self = self else { return }
-            guard response.ok else { completion(.failure(.network(response.status))); return }
+            guard response.ok else { completion(.failure(.from(response))); return }
             let result = self.parseCategories(response.content,
                                               selector: fields[0],
                                               nameRule: fields[1],
@@ -111,7 +111,7 @@ final class HTMLSiteProvider: SiteProvider {
         }
         HTTPClient.shared.request(url, options: options()) { [weak self] response in
             guard let self = self else { return }
-            guard response.ok else { completion(.failure(.network(response.status))); return }
+            guard response.ok else { completion(.failure(.from(response))); return }
             completion(.success(self.parseList(response.content, rule: rule)))
         }
     }
@@ -126,7 +126,7 @@ final class HTMLSiteProvider: SiteProvider {
         let url = detailURL(for: id)
         HTTPClient.shared.request(url, options: options()) { [weak self] response in
             guard let self = self else { return }
-            guard response.ok else { completion(.failure(.network(response.status))); return }
+            guard response.ok else { completion(.failure(.from(response))); return }
             let detail = self.parseDetail(response.content, id: id)
             SiteCache.shared.set(key, detail)
             completion(.success(detail))
@@ -150,7 +150,7 @@ final class HTMLSiteProvider: SiteProvider {
         }
         HTTPClient.shared.request(absolute(path), options: options()) { [weak self] response in
             guard let self = self else { return }
-            guard response.ok else { completion(.failure(.network(response.status))); return }
+            guard response.ok else { completion(.failure(.from(response))); return }
             completion(.success(self.parseList(response.content, rule: effectiveRule)))
         }
     }

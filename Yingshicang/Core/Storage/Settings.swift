@@ -40,7 +40,6 @@ final class Settings {
             k("showFloatHistory"): true,
             k("searchThreadCount"): 20,
             k("playerKernel"): PlayerKernel.avplayer.rawValue,
-            k("liveTimeout"): 15,
             k("dns"): ""
         ])
     }
@@ -126,8 +125,6 @@ final class Settings {
     var rate: Double { get { double("rate") } set { set("rate", newValue) } }
     /// 搜索线程数（R-27）
     var searchThreadCount: Int { get { integer("searchThreadCount") } set { set("searchThreadCount", newValue) } }
-    /// 直播超时
-    var liveTimeout: Int { get { integer("liveTimeout") } set { set("liveTimeout", newValue) } }
     /// 安全 DNS
     var dns: String { get { string("dns") } set { set("dns", newValue) } }
     /// 壁纸虚化开关（R-27）
@@ -154,8 +151,6 @@ final class Settings {
     /// 片头/片尾跳过秒数（R-13 / F-13）
     var introSeconds: Int { get { integer("introSeconds") } set { set("introSeconds", newValue) } }
     var outroSeconds: Int { get { integer("outroSeconds") } set { set("outroSeconds", newValue) } }
-    /// 直播上次频道
-    var lastLiveChannel: String { get { string("lastLiveChannel") } set { set("lastLiveChannel", newValue) } }
 
     /// 清空全部设置（R-27「重置 App」）。
     /// Keychain 里的凭证不在 UserDefaults 里，必须单独清，否则重置后密码仍残留。

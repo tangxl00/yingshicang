@@ -46,14 +46,26 @@
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- 采集站/直播源大量为 HTTP 明文地址，配置中不可枚举域名，故放开任意加载；
-		     这是与原 App 行为对齐的必要条件（原 App 亦全量明文访问）。
+		<!-- 采集站/资源站大量为 HTTP 明文地址（用户配置形如 http://home.jundie.top:81/top98.json，
+		     host 不可枚举），故放开任意加载；这是与原 App 行为对齐的必要条件。
 		     明文放开的暴露面由 JS 桥的请求准入策略兜底（协议白名单 + 域白名单 + 内网屏蔽，
-		     见 Core/Parsing/JS/JSRequestPolicy.swift）；不额外开启 LocalNetworking，
-		     因为本版没有局域网发现/投屏实现，不需要该豁免（质检 P1-5 / P2）。 -->
+		     见 Core/Parsing/JS/JSRequestPolicy.swift）。
+
+		     ⚠️ 这里只能出现 NSAllowsArbitraryLoads 一个键。Apple 文档原文：
+		       "In iOS 10 and later and in macOS 10.12 and later, the value of the
+		        NSAllowsArbitraryLoads key is ignored—and the default value of NO used
+		        instead—if any of the following keys are present in your app's
+		        Information Property List file: NSAllowsArbitraryLoadsForMedia,
+		        NSAllowsArbitraryLoadsInWebContent, NSAllowsLocalNetworking."
+		     （来源：developer.apple.com/documentation/bundleresources/information-property-list/
+		       nsapptransportsecurity/nsallowsarbitraryloads）
+
+		     历史缺陷（v2.0.50 build 20）：这里曾同时存在 NSAllowsArbitraryLoadsInWebContent，
+		     导致 NSAllowsArbitraryLoads 被系统忽略、按 NO 生效，全 App 的 URLSession 明文请求
+		     被 ATS 拦截（NSURLError -1022），表现为「配置拉取失败」。
+		     短视频的 WKWebView 已按用户要求在 build 21 移除，因此 InWebContent 也已无消费者，
+		     一并删除；本版没有局域网发现/投屏实现，故不启用 NSAllowsLocalNetworking。 -->
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-		<key>NSAllowsArbitraryLoadsInWebContent</key>
 		<true/>
 	</dict>
 	<!-- 隐私声明与实现对齐（质检 P2）：本版不申请相机/相册/麦克风/本地网络权限，

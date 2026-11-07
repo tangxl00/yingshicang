@@ -6,10 +6,15 @@ import UIKit
 /// - 根 FrameLayout 全屏；ViewPager2 全屏，但 `layout_marginBottom=58dip` 给底栏留位
 /// - 底部 include 高 `55dip`，内部 FrameLayout 撑满 + LinearLayout 横排
 /// - LinearLayout `paddingTop=5dip`（同时有 paddingBottom，对称留白）
-/// - 5 个等宽 ShapeTextView，textSize `12dip`，顺序「主页/直播/短视频/历史·收藏/我的」
+/// - 等宽 ShapeTextView，textSize `12dip`
+///
+/// **Tab 数量变更（v2.0.50 build 21，按用户真机验收要求）**：
+/// 原版 5 个（主页/直播/短视频/历史·收藏/我的）→ 现为 3 个（主页/历史·收藏/我的）。
+/// 「直播」与「短视频」两个模块连同其入口、解析与播放链路一并删除，
+/// 原因见 KNOWN_DIFFERENCES「按用户要求移除的功能」一节。
 ///
 /// iOS 侧用 UITabBarController 实现同等结构：自定义 tabBar 高度 55pt、
-/// 图标上、文字下、5 等分，选中色取主色（文档 5.1 标注选中色待确认，
+/// 图标上、文字下、等分，选中色取主色（文档 5.1 标注选中色待确认，
 /// 本工程取 `main_color #00C64E` 并在默认取值清单中声明）。
 final class MainTabBarController: UITabBarController {
 
@@ -31,16 +36,17 @@ final class MainTabBarController: UITabBarController {
 
     private func makeTabs() -> [UIViewController] {
         let home = UINavigationController(rootViewController: HomeViewController())
-        let live = UINavigationController(rootViewController: LiveViewController())
-        let shortVideo = UINavigationController(rootViewController: ShortVideoViewController())
         let history = UINavigationController(rootViewController: HistoryCollectViewController())
         let mine = UINavigationController(rootViewController: MineViewController())
 
-        for nav in [home, live, shortVideo, history, mine] {
+        for nav in [home, history, mine] {
             nav.setNavigationBarHidden(true, animated: false)
-            nav.interactivePopGestureRecognizer?.isEnabled = true
         }
-        return [home, live, shortVideo, history, mine]
+        // 说明：本 App 的二级页面全部是 fullScreen present（Detail/Search/Player/我的子页），
+        // 导航栈从不 push，所以「左滑返回」不是靠 interactivePopGestureRecognizer 生效的，
+        // 而是由 SwipeBackViewController（UI/Extensions/SwipeBackSupport.swift）在边缘侧滑时 dismiss。
+        // 三个 Tab 根页没有可返回的上一屏，因此不装该手势。
+        return [home, history, mine]
     }
 
     private func setupCustomTabBar() {
@@ -64,3 +70,4 @@ final class MainTabBarController: UITabBarController {
         view.bringSubviewToFront(customTabBar)
     }
 }
+

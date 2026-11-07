@@ -3,7 +3,7 @@ import UIKit
 /// R-21 历史列表（`mobile_history_activity` 的「播放历史」Tab）。
 /// 布局：搜索入口（高 36dp、圆角历史搜索样式）+ 列表；列表项左侧 3:4 封面，
 /// 右侧片名 + 「看到第 N 集 第 MM:SS」+ 右侧删除按钮。
-final class HistoryListViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+final class HistoryListViewController: SwipeBackViewController, UITableViewDataSource, UITableViewDelegate {
 
     private let table = UITableView(frame: .zero, style: .plain)
     private let clearButton = UIButton.text("清空", size: DesignTokens.Metrics.historyClearFont,
@@ -162,7 +162,7 @@ final class HistoryCell: UITableViewCell {
 }
 
 /// R-22 收藏列表：3 列海报网格（与主页一致），长按/角标删除。
-final class FavoriteViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
+final class FavoriteViewController: SwipeBackViewController, UICollectionViewDataSource, UICollectionViewDelegate {
 
     private let collectionView: UICollectionView
     private let statusLabel = UILabel.make(size: 13, color: DesignTokens.Colors.text, lines: 0)

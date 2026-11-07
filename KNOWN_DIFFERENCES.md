@@ -31,13 +31,26 @@
 | DLNA 投屏 / P2P | 未在本版实现 | 不展示对应入口 |
 | 互动交流 | 未接入 H5 互动页 | 占位说明页 |
 
+## 按用户要求移除的功能（v2.0.50 build 21）
+
+以下能力**不是缺失，是用户在真机验收后明确要求移除**的（2026-11 验收反馈原话：
+「去掉短视频功能，去掉直播功能」）。自 build 21 起源码中不再存在对应实现：
+
+| 功能 | 原实现 | 移除方式 |
+| --- | --- | --- |
+| 短视频（WKWebView 流） | `Features/ShortVideo/` + Tab 入口 | 整目录删除，Tab 5 → 3（主页 / 历史·收藏 / 我的） |
+| 直播页 / 直播设置 / 频道弹窗 / 直播控制 | `Features/Live/` + `LiveParser` + `Settings.liveTimeout` 等 | 整目录删除，设置键与 DesignTokens 直播度量一并清理 |
+
+配套口径：配置文件里的 `lives` 字段自 build 21 起不再纳入模型（`ConfigBundle` 无 `lives` 属性），
+Codable 将其作为未知键静默跳过——**加载含 `lives` 的配置不会报错**，由
+`Build21RegressionTests.testRealTop98ConfigIgnoresLives` 用真实 top98.json 结构固化。
+
 ## 默认取值（对齐 Android 实测）
 
 - 主色 `main = #00C64E`，主背景 `mainBg = #001A37`（ARGB 实测自 APK resources.arsc）
 - 持久化键名：`tpc_stores` / `tpc_current_line` / `tpc_settings.*` / `tpc_search_history`（UserDefaults；数据库表 favorite / history / lanDevice / blockedSite 对齐 Room）
 - 站点 type 路由：0=HTML 解析、1=JSON API、3=JS 爬虫；`csp_` 前缀按 API 处理；jar → Unsupported
 - 搜索参与条件：`searchable > 0` 且非 jar 且未被用户屏蔽；聚合线程数取 `searchThreadCount`（上限 8）
-- 直播源文本格式 `频道名$地址$备用`，取第一条线路；GB18030 / Big5 编码兜底
 - dp→pt 按 1:1 换算（160dpi 基准），全部经 `DesignTokens/Metrics` 统一驱动
 
 ## 隐私声明 / ATS / 后台音频的取值口径（质检 P2-2）
@@ -54,7 +67,7 @@
 | `NSBonjourServices`（3 项 `_http._tcp` 等） | 已声明 | **删除** | 同上，无 Bonjour 浏览实例 |
 | `UIBackgroundModes = audio` | 已声明但无实现 | **补实现**（保留声明） | 视频播放器切后台继续出声是播放器的基本行为，删声明会造成功能缺陷；已在 `AppDelegate` 的 `configureAudioSession()` 里设置 `AVAudioSession` `.playback` 类别 + `.moviePlayback` 模式并 `setActive(true)`，声明与实现对齐 |
 
-**ATS 口径**：保留 `NSAllowsArbitraryLoads = true`（采集站与直播源大量使用明文 HTTP，与 Android 原版行为一致，关掉会导致大面积站点不可用），但**删除** `NSAllowsLocalNetworking`（本版无局域网发现/投屏实现，留着等于给内网访问留口子）。明文请求的越权风险由 `JSRequestPolicy` 在 JS 桥 `req` 层逐请求兜底：禁 `file:`/`data:`/`javascript:`/`ftp:` 等危险协议、默认拒绝内网与回环地址、按站点域白名单限制跨站读取（详见「播放解析与 JS 桥安全」一节）。
+**ATS 口径**：`NSAppTransportSecurity` 下**只保留 `NSAllowsArbitraryLoads = true` 这一个键**（采集站与配置源大量使用明文 HTTP，与 Android 原版行为一致）。⚠️ Apple 规则：iOS 10+ 上只要同 dict 里出现 `NSAllowsArbitraryLoadsInWebContent` / `NSAllowsArbitraryLoadsForMedia` / `NSAllowsLocalNetworking` 任何一个，`NSAllowsArbitraryLoads` 就被忽略并按 NO 处理——build 20 曾因多写了 `InWebContent` 导致全部明文 HTTP 被平台层拦截（NSURLError -1022），配置拉取全部失败且被上层伪装成「HTTP 500」，build 21 已修复并加注释固化。明文请求的越权风险由 `JSRequestPolicy` 在 JS 桥 `req` 层逐请求兜底：禁 `file:`/`data:`/`javascript:`/`ftp:` 等危险协议、默认拒绝内网与回环地址、按站点域白名单限制跨站读取（详见「播放解析与 JS 桥安全」一节）明文请求的越权风险由 `JSRequestPolicy` 在 JS 桥 `req` 层逐请求兜底：禁 `file:`/`data:`/`javascript:`/`ftp:` 等危险协议、默认拒绝内网与回环地址、按站点域白名单限制跨站读取（详见「播放解析与 JS 桥安全」一节）。
 
 ## 播放解析与 JS 桥安全（质检 P1-1 / P1-4 / P1-5 / P1-6）
 

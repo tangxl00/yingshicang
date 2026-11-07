@@ -24,19 +24,32 @@ protocol SiteProvider {
 /// 站点级错误。jar 源在 iOS 属平台级不支持，用独立 case 显式表达，
 /// 由 UI 给出明确提示，绝不静默降级为空列表（需求「不静默降级」）。
 /// `Equatable` 让测试可以对错误值做精确断言（如 `XCTAssertEqual(error, .parse("..."))`），
-/// 关联值均为 String/Int，合成实现即可，不改变运行时行为。
+/// 关联值均为 String/Int/TransportFailure，合成实现即可，不改变运行时行为。
 enum SiteError: Error, LocalizedError, Equatable {
     case unsupportedJar(String)
+    /// 拿到了真实 HTTP 响应但状态码非 2xx。
     case network(Int)
+    /// 传输层失败：没拿到 HTTP 响应，携带原始 NSURLError（不伪造状态码）。
+    case transport(TransportFailure)
     case parse(String)
     case empty
     case cancelled
+
+    /// 由 HTTPResponse 归一：先看传输层失败，再看真实状态码。
+    /// 这是「不再伪装成 500 / -1」的唯一入口，所有 provider 共用。
+    static func from(_ response: HTTPResponse) -> SiteError {
+        if let transport = response.transport { return .transport(transport) }
+        return .network(response.status)
+    }
 
     var errorDescription: String? {
         switch self {
         case .unsupportedJar(let site):
             return "「\(site)」使用 jar 爬虫规则，iOS 无 Java 运行环境，该站点在当前平台不可用"
-        case .network(let status): return "网络请求失败（HTTP \(status)）"
+        case .network(let status):
+            return status > 0 ? "网络请求失败（HTTP \(status)）" : "网络请求失败（服务端未返回状态码）"
+        case .transport(let failure):
+            return "网络请求失败（\(failure.displayText)\(NetworkErrorMapper.hint(for: failure))）"
         case .parse(let detail): return "页面解析失败：\(detail)"
         case .empty: return "没有数据"
         case .cancelled: return "已取消"

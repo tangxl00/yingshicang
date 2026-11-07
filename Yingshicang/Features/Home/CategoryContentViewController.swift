@@ -6,7 +6,7 @@ import UIKit
 /// - 3 列海报网格（`gridColumns`），间距 8dp，页面内缩 12dp（令牌来自 gridSpacing/pageInset）
 /// - 触底追加下一页（分类接口的 page 参数，取值 1 基，与 APK 一致）
 /// - 站点返回 unsupportedJar / 网络错误时展示明确文案，不静默显示空列表
-final class CategoryContentViewController: UIViewController {
+final class CategoryContentViewController: SwipeBackViewController {
 
     private let collectionView: UICollectionView
     private let statusLabel = UILabel.make(size: 13, color: DesignTokens.Colors.text, lines: 0)
