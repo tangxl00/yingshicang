@@ -80,15 +80,40 @@ jobs:
       - name: Select or create simulator
         run: |
           set -euo pipefail
-          RUNTIME_ID=$(xcrun simctl list runtimes --json | jq -r '.runtimes | map(select(.name | startswith("iOS"))) | .[-1].identifier')
-          if [ -z "$RUNTIME_ID" ] || [ "$RUNTIME_ID" = "null" ]; then
-            echo "No iOS runtime found" >&2; exit 1
+          {
+            echo "### runtimes"
+            xcrun simctl list runtimes
+            echo "### available iPhone devices"
+            xcrun simctl list devices available
+          } 2>&1 | tee build-logs/simulator-list.log
+          # 1) 优先复用 runner 上已存在的可用 iPhone 模拟器
+          EXISTING=$(xcrun simctl list devices available --json \
+            | jq -r '[.devices[][] | select(.isAvailable == true) | select(.name | startswith("iPhone"))] | first | .udid // empty')
+          if [ -n "$EXISTING" ]; then
+            UDID="$EXISTING"
+            xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+          else
+            # 2) 退而求其次：按机型列表顺序逐个尝试创建（列表为新→旧）
+            RUNTIME_ID=$(xcrun simctl list runtimes --json \
+              | jq -r '[.runtimes[] | select(.name | startswith("iOS")) | select(.isAvailable != false)]
+                       | sort_by(.version | split(".") | map(tonumber? // 0)) | last | .identifier')
+            if [ -z "$RUNTIME_ID" ] || [ "$RUNTIME_ID" = "null" ]; then
+              echo "No iOS runtime found" >&2; exit 1
+            fi
+            UDID=""
+            for dt in $(xcrun simctl list devicetypes --json \
+                         | jq -r '.devicetypes[] | select(.name | startswith("iPhone")) | .identifier'); do
+              if UDID=$(xcrun simctl create ci-iphone "$dt" "$RUNTIME_ID" 2>/dev/null); then
+                break
+              fi
+            done
+            if [ -z "$UDID" ]; then
+              echo "Failed to create any simulator" >&2; exit 1
+            fi
           fi
-          DEVTYPE=$(xcrun simctl list devicetypes --json | jq -r '.devicetypes | map(select(.name | startswith("iPhone"))) | .[-1].identifier')
-          UDID=$(xcrun simctl create ci-iphone "$DEVTYPE" "$RUNTIME_ID")
-          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl bootstatus "$UDID" -b >/dev/null 2>&1 || true
           echo "DEST_ID=$UDID" >> "$GITHUB_ENV"
-          echo "Using devicetype=$DEVTYPE runtime=$RUNTIME_ID udid=$UDID"
+          echo "Using simulator udid=$UDID"
 
       - name: xcodebuild test
         run: |
