@@ -145,8 +145,11 @@ final class ScanCodeViewController: UIViewController, AVCaptureMetadataOutputObj
             self.previewLayer?.frame = holder.bounds
         }
 
-        if let stack = scanHintLabel.superview, let index = stack.arrangedSubviews.firstIndex(of: scanHintLabel) {
+        if let stack = scanHintLabel.superview as? UIStackView,
+           let index = stack.arrangedSubviews.firstIndex(of: scanHintLabel) {
             stack.insertArrangedSubview(previewHolder, at: index + 1)
+        } else {
+            scanHintLabel.superview?.addSubview(previewHolder)
         }
     }
 
