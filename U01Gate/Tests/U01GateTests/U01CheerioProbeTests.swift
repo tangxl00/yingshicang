@@ -17,20 +17,29 @@ import JavaScriptCore
 final class U01CheerioProbeTests: XCTestCase {
 
     private func fixtureHTML() -> String {
-        let bundle = Bundle(for: U01CheerioProbeTests.self)
-        let url = bundle.resourceURL?
-            .appendingPathComponent("Fixtures/sample.html")
-            ?? bundle.resourceURL!.appendingPathComponent("sample.html")
+        // 测试 target 自身的资源包（.copy("Fixtures")）
+        let bundle = Bundle.module
+        let candidates = [
+            bundle.resourceURL?.appendingPathComponent("Fixtures/sample.html"),
+            bundle.resourceURL?.appendingPathComponent("sample.html")
+        ]
+        let url = candidates.compactMap { $0 }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+            ?? bundle.resourceURL.flatMap { root in
+                FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+                    .compactMap { $0 as? URL }
+                    .first { $0.lastPathComponent == "sample.html" }
+            }
+        guard let url = url else {
+            XCTFail("sample.html fixture 缺失")
+            return ""
+        }
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }
 
     /// 注入 pdfh 驱动（C-5 用，依赖 cheerio 已装载成功）。
     private func installDriver(_ context: JSContext) -> Bool {
-        guard let url = U01Probe_Resource(named: "pdfh.driver.js"),
-              let source = try? String(contentsOf: url, encoding: .utf8) else { return false }
-        _ = context.evaluateScript(source)
-        let ok = context.evaluateScript("(typeof pdfh === 'function' && typeof pd === 'function')")
-        return ok?.toBool() == true
+        U01Probe.installPdfhDriver(context)
     }
 
     // MARK: - 基础组（无垫片）
@@ -162,18 +171,3 @@ final class U01CheerioProbeTests: XCTestCase {
         XCTAssertEqual(parts[3], "https://v.example.com/tv/2/")
     }
 }
-
-/// 测试侧读取 U01Gate 模块资源（Resources 目录下的 js）。
-func U01Probe_Resource(named name: String) -> URL? {
-    let bundle = Bundle(for: BundleProbe.self)
-    let candidates = [
-        bundle.resourceURL?.appendingPathComponent("Resources/\(name)"),
-        bundle.resourceURL?.appendingPathComponent("U01Gate_U01Gate.bundle/Contents/Resources/Resources/\(name)"),
-        bundle.resourceURL?.appendingPathComponent(name)
-    ]
-    return candidates
-        .compactMap { $0 }
-        .first { FileManager.default.fileExists(atPath: $0.path) }
-}
-
-private final class BundleProbe { }

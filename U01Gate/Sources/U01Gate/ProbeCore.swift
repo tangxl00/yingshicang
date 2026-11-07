@@ -66,16 +66,34 @@ public enum U01Probe {
     }
 
     static func resourceURL(named name: String) -> URL? {
-        // SPM .copy 资源在模块 bundle 的 Resources 目录下
-        let bundle = Bundle(for: BundleToken.self)
+        // SPM 资源在自动生成的 Bundle.module 中；.copy("Resources") 目录
+        // 落在 bundle 的 Resources/ 下，另配递归兜底以防布局差异。
+        let bundle = Bundle.module
         let candidates = [
             bundle.resourceURL?.appendingPathComponent("Resources/\(name)"),
-            bundle.resourceURL?.appendingPathComponent("U01Gate_U01Gate.bundle/Contents/Resources/Resources/\(name)"),
             bundle.resourceURL?.appendingPathComponent(name)
         ]
-        return candidates
-            .compactMap { $0 }
-            .first { FileManager.default.fileExists(atPath: $0.path) }
+        if let hit = candidates.compactMap({ $0 })
+            .first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+            return hit
+        }
+        guard let root = bundle.resourceURL else { return nil }
+        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else {
+            return nil
+        }
+        for case let url as URL in enumerator where url.lastPathComponent == name {
+            return url
+        }
+        return nil
+    }
+
+    /// 注入 pdfh/pdfa/pd 驱动脚本（C-5 探针依赖，资源属 U01Gate 模块）。
+    public static func installPdfhDriver(_ context: JSContext) -> Bool {
+        guard let url = resourceURL(named: "pdfh.driver.js"),
+              let source = try? String(contentsOf: url, encoding: .utf8) else { return false }
+        _ = context.evaluateScript(source)
+        let ok = context.evaluateScript("(typeof pdfh === 'function' && typeof pd === 'function')")
+        return ok?.toBool() == true
     }
 
     /// 取最近一次 JS 异常文本（用于诊断信息，不作为断言依据）。
@@ -84,4 +102,3 @@ public enum U01Probe {
     }
 }
 
-private final class BundleToken { }
