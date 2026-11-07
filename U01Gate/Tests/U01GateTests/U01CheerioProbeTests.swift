@@ -1,4 +1,5 @@
 import XCTest
+import JavaScriptCore
 @testable import U01Gate
 
 /// U-01 门禁用例（架构文档第 9 章）：cheerio.min.js 能否在 JavaScriptCore 中运行。
@@ -42,7 +43,7 @@ final class U01CheerioProbeTests: XCTestCase {
         }
     }
 
-    func testC2_ConstructDOM() {
+    func testC2_ConstructDOM() throws {
         let (context, load) = U01Probe.load(shimmed: false)
         guard case .ok = load else { throw XCTSkip("C-1 未通过，C-2 无意义（见 shimmed 组）") }
         let out = context.evaluateScript("""
@@ -56,7 +57,7 @@ final class U01CheerioProbeTests: XCTestCase {
         XCTAssertEqual(text, "Hi", "DOM 构造或查询失败")
     }
 
-    func testC3_SelectorHit() {
+    func testC3_SelectorHit() throws {
         let (context, load) = U01Probe.load(shimmed: false)
         guard case .ok = load else { throw XCTSkip("C-1 未通过（见 shimmed 组）") }
         let html = fixtureHTML()
@@ -79,7 +80,7 @@ final class U01CheerioProbeTests: XCTestCase {
         XCTAssertEqual(parts[3], "3", "列表计数不符")
     }
 
-    func testC4_HtmlReturnsString() {
+    func testC4_HtmlReturnsString() throws {
         let (context, load) = U01Probe.load(shimmed: false)
         guard case .ok = load else { throw XCTSkip("C-1 未通过（见 shimmed 组）") }
         context.setObject(fixtureHTML(), forKeyedSubscript: "html" as NSString)
@@ -98,7 +99,7 @@ final class U01CheerioProbeTests: XCTestCase {
         XCTAssertEqual(parts[1], "string", "node.html() 必须返回 string，实际 \(parts[1])")
     }
 
-    func testC5_RealPdfhCall() {
+    func testC5_RealPdfhCall() throws {
         let (context, load) = U01Probe.load(shimmed: false)
         guard case .ok = load else { throw XCTSkip("C-1 未通过（见 shimmed 组）") }
         guard installDriver(context) else {
@@ -135,7 +136,7 @@ final class U01CheerioProbeTests: XCTestCase {
         }
     }
 
-    func testShimmed_C2ToC5() {
+    func testShimmed_C2ToC5() throws {
         let (context, load) = U01Probe.load(shimmed: true)
         guard case .ok = load else { throw XCTSkip("垫片组 C-1 未通过 → 判定 B") }
         guard installDriver(context) else {
