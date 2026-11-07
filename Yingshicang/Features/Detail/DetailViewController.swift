@@ -169,6 +169,10 @@ final class DetailViewController: SwipeBackViewController {
         nameRow.addArrangedSubview(nameLabel)
         nameRow.addArrangedSubview(scoreLabel)
         infoColumn.addArrangedSubview(nameRow)
+        // R-53：简介区默认 4 行截断，点击打开完整简介弹窗。
+        descLabel.isUserInteractionEnabled = true
+        let introTap = UITapGestureRecognizer(target: self, action: #selector(openIntroDialog))
+        descLabel.addGestureRecognizer(introTap)
         infoColumn.addArrangedSubview(descLabel)
         infoColumn.addArrangedSubview(sourceLabel)
         typeWrap.translatesAutoresizingMaskIntoConstraints = false
@@ -285,6 +289,13 @@ final class DetailViewController: SwipeBackViewController {
                 }
             }
         }
+    }
+
+    /// R-53：打开完整简介弹窗（详情区简介 4 行截断，弹窗内可滚动看全文并支持关键词检索）。
+    @objc private func openIntroDialog() {
+        guard let detail = detail, !detail.vodContent.isEmpty else { return }
+        let dialog = IntroDialogViewController(vodName: detail.vodName, content: detail.vodContent)
+        present(dialog, animated: true)
     }
 
     private func apply(_ detail: VodDetail) {

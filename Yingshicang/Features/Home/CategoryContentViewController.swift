@@ -23,6 +23,10 @@ final class CategoryContentViewController: SwipeBackViewController {
     private var page = 0
     private var isLoading = false
     private var reachedEnd = false
+    /// R-06 当前筛选的 extend 参数（已剔除空值），空 = 未筛选。
+    private var activeExtend: [String: String] = [:]
+    /// R-06 悬浮筛选入口（右上角）：仅当站点声明 filterable 且筛选项解析非空时显示。
+    private let filterButton = UIButton(type: .system)
 
     init(site: SiteConfig?, categoryId: String) {
         self.site = site
@@ -64,6 +68,17 @@ final class CategoryContentViewController: SwipeBackViewController {
         activity.hidesWhenStopped = true
         view.addSubview(activity)
 
+        // R-06 悬浮筛选入口：右上角胶囊按钮，只在站点有筛选项时出现。
+        filterButton.setTitle(" 筛选 ", for: .normal)
+        filterButton.setTitleColor(.white, for: .normal)
+        filterButton.titleLabel?.font = .systemFont(ofSize: DesignTokens.sp(12))
+        filterButton.backgroundColor = DesignTokens.Colors.sheet
+        filterButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.confirmButtonCorner)
+        filterButton.translatesAutoresizingMaskIntoConstraints = false
+        filterButton.isHidden = true
+        filterButton.addTarget(self, action: #selector(openFilterSheet), for: .touchUpInside)
+        view.addSubview(filterButton)
+
         NSLayoutConstraint.activate([
             collectionView.topAnchor.constraint(equalTo: view.topAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -73,8 +88,17 @@ final class CategoryContentViewController: SwipeBackViewController {
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.dp(24)),
             statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.dp(24)),
             activity.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            activity.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            activity.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            filterButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: DesignTokens.dp(8)),
+            filterButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.dp(12)),
+            filterButton.heightAnchor.constraint(equalToConstant: DesignTokens.dp(30))
         ])
+
+        // filterable 标记 + filter JSON 能解析出维度才显示入口（两者都要，避免无效弹层）。
+        if let site = site, site.filterable == 1,
+           !FilterSheetParser.parse(site.filter).isEmpty {
+            filterButton.isHidden = false
+        }
 
         loadNextPage()
     }
@@ -90,7 +114,7 @@ final class CategoryContentViewController: SwipeBackViewController {
         if items.isEmpty { activity.startAnimating() }
 
         let nextPage = page + 1
-        provider.category(id: categoryId, page: nextPage, extend: [:]) { [weak self] result in
+        provider.category(id: categoryId, page: nextPage, extend: activeExtend) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.isLoading = false
@@ -116,6 +140,29 @@ final class CategoryContentViewController: SwipeBackViewController {
     private func showStatus(_ text: String) {
         statusLabel.text = text
         statusLabel.isHidden = false
+    }
+
+    // MARK: - R-06 筛选
+
+    @objc private func openFilterSheet() {
+        let sheet = FilterSheetViewController(site: site)
+        sheet.onApply = { [weak self] extend in
+            self?.applyFilter(extend)
+        }
+        present(sheet, animated: true)
+    }
+
+    /// 应用筛选：替换 extend、清空列表、页码归 1 重新拉取。
+    /// 「全部」（空值）维度被 FilterSheetParser.extend 剔除，与未筛选形态一致。
+    private func applyFilter(_ extend: [String: String]) {
+        activeExtend = extend
+        items = []
+        page = 0
+        reachedEnd = false
+        collectionView.reloadData()
+        statusLabel.isHidden = true
+        filterButton.setTitle(extend.isEmpty ? " 筛选 " : " 筛选·\(extend.count) ", for: .normal)
+        loadNextPage()
     }
 
     private func openDetail(_ item: VodItem) {

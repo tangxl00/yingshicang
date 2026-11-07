@@ -1,4 +1,5 @@
 import UIKit
+import UniformTypeIdentifiers
 
 // 「我的」页的二级页面（R-30~R-47 中对应的设置/管理类界面）。
 // 说明：这些页面按架构文档「设置类表单可用 SwiftUI」的口径本可用 SwiftUI，
@@ -6,6 +7,129 @@ import UIKit
 // 每页的尺寸/文案取自 R 系列条目与 strings.xml 实测值。
 
 // MARK: - R-30 配置仓库（多仓管理）
+
+/// R-28 添加仓库弹层：220dp（inputDialogHeight）圆角居中弹窗。
+/// 内容 = URL 输入 + 名称输入 + 双按钮行（「本地导入」走文件 App 选配置文件，
+/// 「添加并加载」走网络加载），替代原 UIAlertController 文本输入形态。
+final class AddStoreDialogViewController: CardDialogViewController, UIDocumentPickerDelegate {
+
+    private let urlField = UITextField()
+    private let nameField = UITextField()
+    /// 导入/添加完成回调（主线程），宿主据此刷新仓列表。
+    var onFinished: (() -> Void)?
+
+    init(prefillURL: String = "") {
+        super.init(config: .init(title: "添加仓库",
+                                 height: DesignTokens.dp(DesignTokens.Metrics.inputDialogHeight),
+                                 anchor: .center))
+        urlField.text = prefillURL
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func buildBody(into stack: UIStackView) {
+        for (field, placeholder) in [(urlField, "配置地址 https://…/config.json"),
+                                     (nameField, "名称（可选）")] {
+            field.placeholder = placeholder
+            field.textColor = .white
+            field.backgroundColor = DesignTokens.Colors.inputBg
+            field.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.inputFieldCorner)
+            field.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.inputFieldFont))
+            field.autocorrectionType = .no
+            field.autocapitalizationType = .none
+            field.keyboardType = field == urlField ? .URL : .default
+            field.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 1))
+            field.leftViewMode = .always
+            field.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.inputFieldHeight).isActive = true
+            stack.addArrangedSubview(field)
+        }
+
+        let buttonRow = UIStackView.horizontal(spacing: DesignTokens.dp(10))
+
+        let localButton = UIButton(type: .system)
+        localButton.setTitle("本地导入", for: .normal)
+        localButton.setTitleColor(DesignTokens.Colors.main, for: .normal)
+        localButton.titleLabel?.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.sheetActionFont))
+        localButton.backgroundColor = DesignTokens.Colors.cardWhite
+        localButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.dialogConfirmCorner)
+        localButton.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.dialogConfirmHeight).isActive = true
+        localButton.addTarget(self, action: #selector(pickLocalFile), for: .touchUpInside)
+        buttonRow.addArrangedSubview(localButton)
+
+        let addButton = UIButton(type: .system)
+        addButton.setTitle("添加并加载", for: .normal)
+        addButton.setTitleColor(.white, for: .normal)
+        addButton.titleLabel?.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.sheetActionFont), weight: .medium)
+        addButton.backgroundColor = DesignTokens.Colors.main
+        addButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.dialogConfirmCorner)
+        addButton.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.dialogConfirmHeight).isActive = true
+        addButton.addTarget(self, action: #selector(confirmAdd), for: .touchUpInside)
+        buttonRow.addArrangedSubview(addButton)
+
+        localButton.widthAnchor.constraint(equalTo: addButton.widthAnchor, multiplier: 1).isActive = true
+        stack.addArrangedSubview(buttonRow)
+    }
+
+    @objc private func pickLocalFile() {
+        var types: [UTType] = [.json, .plainText, .text]
+        types.append(.data)
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types)
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let url = urls.first else { return }
+        // 文件 App 外部选择的安全作用域：读前 start，读后 stop。
+        let secured = url.startAccessingSecurityScopedResource()
+        defer { if secured { url.stopAccessingSecurityScopedResource() } }
+        guard let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty else {
+            presentError("无法读取所选文件（非文本配置）")
+            return
+        }
+        let name = url.deletingPathExtension().lastPathComponent
+        let result = LocalConfigImporter.importConfig(text: text, sourceName: "file://\(name)")
+        switch result {
+        case .success:
+            StoreHouseStore.shared.add(ConfigStore(name: name,
+                                                   url: "file://\(name)",
+                                                   lines: [ConfigLine(name: name, url: "file://\(name)")]))
+            let callback = onFinished
+            dismiss(animated: true) { callback?() }
+        case .failure(let message):
+            presentError(message)
+        }
+    }
+
+    @objc private func confirmAdd() {
+        guard let url = urlField.text?.trimmingCharacters(in: .whitespaces), !url.isEmpty else {
+            urlField.becomeFirstResponder()
+            return
+        }
+        let rawName = nameField.text?.trimmingCharacters(in: .whitespaces) ?? ""
+        let name = rawName.isEmpty ? "配置\(StoreHouseStore.shared.stores().count + 1)" : rawName
+        ConfigRepository.shared.load(urlString: url) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                switch result {
+                case .success:
+                    StoreHouseStore.shared.add(ConfigStore(name: name, url: url,
+                                                            lines: [ConfigLine(name: name, url: url)]))
+                    let callback = self.onFinished
+                    self.dismiss(animated: true) { callback?() }
+                case .failure(let error):
+                    self.presentError(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func presentError(_ message: String) {
+        let alert = UIAlertController(title: "导入失败", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
+    }
+}
 
 /// 配置仓库页：仓列表 + 「添加」按钮；顶部提示条。
 /// 数据走 StoreHouseStore（tpc_stores / tpc_current_line）。
@@ -61,38 +185,13 @@ final class StoreHouseViewController: SwipeBackViewController, UITableViewDataSo
     }
 
     @objc private func addStore() {
-        let alert = UIAlertController(title: "添加配置地址", message: "支持单个 json/txt 地址或多仓聚合地址", preferredStyle: .alert)
-        alert.addTextField { $0.placeholder = "https://…/config.json" }
-        alert.addTextField { $0.placeholder = "名称（可选）" }
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        alert.addAction(UIAlertAction(title: "添加并加载", style: .default) { [weak self] _ in
-            guard let self = self,
-                  let url = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces),
-                  !url.isEmpty else { return }
-            let rawName = alert.textFields?[1].text?.trimmingCharacters(in: .whitespaces) ?? ""
-            let name = rawName.isEmpty ? "配置\(self.stores.count + 1)" : rawName
-            self.loadStore(url: url, name: name)
-        })
-        present(alert, animated: true)
-    }
-
-    private func loadStore(url: String, name: String) {
-        ConfigRepository.shared.load(urlString: url) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                switch result {
-                case .success:
-                    StoreHouseStore.shared.add(ConfigStore(name: name, url: url,
-                                                            lines: [ConfigLine(name: name, url: url)]))
-                    self.stores = StoreHouseStore.shared.stores()
-                    self.tableView.reloadData()
-                case .failure(let error):
-                    let alert = UIAlertController(title: "加载失败", message: error.localizedDescription, preferredStyle: .alert)
-                    alert.addAction(UIAlertAction(title: "好", style: .default))
-                    self.present(alert, animated: true)
-                }
-            }
+        // R-28：UIAlertController 输入形态 → 220dp 圆角弹层（含本地文件导入入口）。
+        let dialog = AddStoreDialogViewController()
+        dialog.onFinished = { [weak self] in
+            self?.stores = StoreHouseStore.shared.stores()
+            self?.tableView.reloadData()
         }
+        present(dialog, animated: true)
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { stores.count }
@@ -408,12 +507,194 @@ final class SettingsListViewController: SwipeBackViewController, UITableViewData
 
 // MARK: - R-45 WebDAV 备份
 
-final class WebDavViewController: SwipeBackViewController {
+/// R-45 WebDAV 凭据编辑弹层：340dp（webDavWidth）圆角居中弹窗。
+/// 三字段 + 「测试连接」（PROPFIND 探测，结果内联回显）+「保存」。
+final class WebDavEditDialogViewController: CardDialogViewController {
 
     private let urlField = UITextField()
     private let accountField = UITextField()
     private let passwordField = UITextField()
+    private let resultLabel = UILabel.make(size: 12, color: DesignTokens.Colors.text, lines: 0)
+    private let testButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
+
+    override init(config: Config) {
+        super.init(config: config)
+    }
+
+    convenience init() {
+        self.init(config: .init(title: "WebDAV 服务器",
+                                height: DesignTokens.dp(310),
+                                width: DesignTokens.dp(DesignTokens.Metrics.webDavWidth),
+                                anchor: .center))
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func buildBody(into stack: UIStackView) {
+        for (field, placeholder, value) in [
+            (urlField, "服务器地址 https://…", Settings.shared.webDavURL),
+            (accountField, "账号", Settings.shared.webDavAccount),
+            (passwordField, "密码", Settings.shared.webDavPassword)
+        ] {
+            field.placeholder = placeholder
+            field.text = value
+            field.textColor = .white
+            field.backgroundColor = DesignTokens.Colors.inputBg
+            field.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.inputFieldCorner)
+            field.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.inputFieldFont))
+            field.autocorrectionType = .no
+            field.autocapitalizationType = .none
+            field.isSecureTextEntry = field == passwordField
+            field.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 1))
+            field.leftViewMode = .always
+            field.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.inputFieldHeight).isActive = true
+            stack.addArrangedSubview(field)
+        }
+
+        resultLabel.isHidden = true
+        stack.addArrangedSubview(resultLabel)
+
+        let buttonRow = UIStackView.horizontal(spacing: DesignTokens.dp(10))
+        testButton.setTitle("测试连接", for: .normal)
+        testButton.setTitleColor(DesignTokens.Colors.main, for: .normal)
+        testButton.titleLabel?.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.sheetActionFont))
+        testButton.backgroundColor = DesignTokens.Colors.cardWhite
+        testButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.dialogConfirmCorner)
+        testButton.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.dialogConfirmHeight).isActive = true
+        testButton.addTarget(self, action: #selector(testConnection), for: .touchUpInside)
+        buttonRow.addArrangedSubview(testButton)
+
+        saveButton.setTitle("保存", for: .normal)
+        saveButton.setTitleColor(.white, for: .normal)
+        saveButton.titleLabel?.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.sheetActionFont), weight: .medium)
+        saveButton.backgroundColor = DesignTokens.Colors.main
+        saveButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.dialogConfirmCorner)
+        saveButton.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.dialogConfirmHeight).isActive = true
+        saveButton.addTarget(self, action: #selector(save), for: .touchUpInside)
+        buttonRow.addArrangedSubview(saveButton)
+
+        testButton.widthAnchor.constraint(equalTo: saveButton.widthAnchor, multiplier: 1).isActive = true
+        stack.addArrangedSubview(buttonRow)
+    }
+
+    @objc private func testConnection() {
+        resultLabel.isHidden = false
+        resultLabel.text = "正在连接…"
+        testButton.isEnabled = false
+        WebDavConnectionTester.testConnection(base: urlField.text ?? "",
+                                              account: accountField.text ?? "",
+                                              password: passwordField.text ?? "") { [weak self] outcome in
+            guard let self = self else { return }
+            self.testButton.isEnabled = true
+            self.resultLabel.text = outcome.displayText
+        }
+    }
+
+    @objc private func save() {
+        Settings.shared.webDavURL = urlField.text ?? ""
+        Settings.shared.webDavAccount = accountField.text ?? ""
+        Settings.shared.webDavPassword = passwordField.text ?? ""
+        dismiss(animated: true)
+    }
+}
+
+/// R-46 备份底部弹层：450dp（backupSheetHeight）双栏。
+/// 左栏 weight 1.3：backupIconSize 80 图标 + 说明；右栏 weight 2.0：上传备份 /
+/// 下载并恢复操作 + 结果状态。
+final class BackupSheetViewController: CardDialogViewController {
+
+    private let statusLabel = UILabel.make(size: 12, color: DesignTokens.Colors.text, lines: 0)
+
+    convenience init() {
+        self.init(config: .init(title: "备份与恢复",
+                                height: DesignTokens.dp(DesignTokens.Metrics.backupSheetHeight),
+                                anchor: .bottom,
+                                showsDragBar: true))
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func buildBody(into stack: UIStackView) {
+        let columns = UIStackView.horizontal(spacing: DesignTokens.dp(16))
+
+        // 左栏（weight 1.3）：图标 + 说明。
+        let left = UIStackView.vertical(spacing: DesignTokens.dp(10))
+        left.alignment = .center
+        let icon = UIImageView(image: UIImage(systemName: "externaldrive.badge.icloud"))
+        icon.tintColor = DesignTokens.Colors.main
+        icon.contentMode = .scaleAspectFit
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        left.addArrangedSubview(icon)
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: DesignTokens.dp(DesignTokens.Metrics.backupIconSize)),
+            icon.heightAnchor.constraint(equalToConstant: DesignTokens.dp(DesignTokens.Metrics.backupIconSize))
+        ])
+        left.addArrangedSubview(UILabel.make(text: "本地数据整体备份\n历史 / 收藏 / 屏蔽源",
+                                             size: 12, color: DesignTokens.Colors.text, lines: 0))
+        columns.addArrangedSubview(left)
+
+        // 右栏（weight 2.0）：备份操作。
+        let right = UIStackView.vertical(spacing: DesignTokens.dp(10))
+        let uploadButton = UIButton.text("上传备份到 WebDAV", size: 14, color: .white)
+        uploadButton.backgroundColor = DesignTokens.Colors.main
+        uploadButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.confirmButtonCorner)
+        uploadButton.heightAnchor.constraint(equalToConstant: DesignTokens.dp(DesignTokens.Metrics.confirmButtonHeight)).isActive = true
+        uploadButton.addTarget(self, action: #selector(uploadBackup), for: .touchUpInside)
+        right.addArrangedSubview(uploadButton)
+
+        let downloadButton = UIButton.text("从 WebDAV 下载并恢复", size: 14, color: DesignTokens.Colors.main)
+        downloadButton.backgroundColor = DesignTokens.Colors.cardWhite
+        downloadButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.confirmButtonCorner)
+        downloadButton.heightAnchor.constraint(equalToConstant: DesignTokens.dp(DesignTokens.Metrics.confirmButtonHeight)).isActive = true
+        downloadButton.addTarget(self, action: #selector(downloadBackup), for: .touchUpInside)
+        right.addArrangedSubview(downloadButton)
+
+        statusLabel.isHidden = true
+        right.addArrangedSubview(statusLabel)
+        columns.addArrangedSubview(right)
+
+        // 双栏权重 1.3 : 2.0（storeHouseLeftWeight / storeHouseRightWeight）。
+        left.widthAnchor.constraint(equalTo: right.widthAnchor,
+                                    multiplier: DesignTokens.Metrics.storeHouseLeftWeight / DesignTokens.Metrics.storeHouseRightWeight).isActive = true
+        stack.addArrangedSubview(columns)
+    }
+
+    @objc private func uploadBackup() {
+        statusLabel.isHidden = false
+        statusLabel.text = "正在上传备份…"
+        BackupTransfer.upload { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success:
+                self.statusLabel.text = "备份已上传"
+            case .failure(let error):
+                self.statusLabel.text = error.displayText
+            }
+        }
+    }
+
+    @objc private func downloadBackup() {
+        statusLabel.isHidden = false
+        statusLabel.text = "正在下载备份…"
+        BackupTransfer.downloadAndRestore { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let payload):
+                self.statusLabel.text = "已恢复：历史 \(payload.history.count) 条 / 收藏 \(payload.favorites.count) 条"
+            case .failure(let error):
+                self.statusLabel.text = error.displayText
+            }
+        }
+    }
+}
+
+/// R-45/R-46 WebDAV 备份页：凭据状态 + 编辑入口（340dp 弹层）+ 备份入口（450dp 双栏弹层）。
+final class WebDavViewController: SwipeBackViewController {
+
+    private let statusCard = UILabel.make(size: 13, color: .white, lines: 0)
+    private let editButton = UIButton(type: .system)
+    private let backupButton = UIButton(type: .system)
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -435,46 +716,51 @@ final class WebDavViewController: SwipeBackViewController {
                                  color: .white, weight: .semibold)
         column.addArrangedSubview(title)
 
-        for (field, placeholder, value) in [
-            (urlField, "服务器地址 https://…", Settings.shared.webDavURL),
-            (accountField, "账号", Settings.shared.webDavAccount),
-            (passwordField, "密码", Settings.shared.webDavPassword)
-        ] {
-            field.placeholder = placeholder
-            field.text = value
-            field.textColor = .white
-            field.backgroundColor = DesignTokens.Colors.inputBg
-            field.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.inputFieldCorner)
-            field.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.inputFieldFont))
-            field.autocorrectionType = .no
-            field.autocapitalizationType = .none
-            field.isSecureTextEntry = field == passwordField
-            field.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 1))
-            field.leftViewMode = .always
-            field.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.inputFieldHeight).isActive = true
-            column.addArrangedSubview(field)
-        }
+        statusCard.numberOfLines = 0
+        column.addArrangedSubview(statusCard)
 
-        saveButton.setTitle("保存", for: .normal)
-        saveButton.setTitleColor(.white, for: .normal)
-        saveButton.backgroundColor = DesignTokens.Colors.main
-        saveButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.dialogConfirmCorner)
-        saveButton.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.dialogConfirmHeight).isActive = true
-        saveButton.addTarget(self, action: #selector(save), for: .touchUpInside)
-        column.addArrangedSubview(saveButton)
+        editButton.setTitle("编辑服务器", for: .normal)
+        editButton.setTitleColor(.white, for: .normal)
+        editButton.backgroundColor = DesignTokens.Colors.main
+        editButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.dialogConfirmCorner)
+        editButton.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.dialogConfirmHeight).isActive = true
+        editButton.addTarget(self, action: #selector(openEdit), for: .touchUpInside)
+        column.addArrangedSubview(editButton)
 
-        let note = UILabel.make(text: "说明：iOS 版当前仅保存 WebDAV 凭据，备份/恢复的传输逻辑待后续版本接入。",
+        backupButton.setTitle("备份与恢复", for: .normal)
+        backupButton.setTitleColor(DesignTokens.Colors.main, for: .normal)
+        backupButton.backgroundColor = DesignTokens.Colors.cardWhite
+        backupButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.dialogConfirmCorner)
+        backupButton.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.dialogConfirmHeight).isActive = true
+        backupButton.addTarget(self, action: #selector(openBackup), for: .touchUpInside)
+        column.addArrangedSubview(backupButton)
+
+        let note = UILabel.make(text: "备份内容：播放历史、收藏、屏蔽源。备份文件为 yingshicang-backup.json，存放在 WebDAV 服务器根目录。",
                                 size: 12, color: DesignTokens.Colors.text, lines: 0)
         column.addArrangedSubview(note)
     }
 
-    @objc private func save() {
-        Settings.shared.webDavURL = urlField.text ?? ""
-        Settings.shared.webDavAccount = accountField.text ?? ""
-        Settings.shared.webDavPassword = passwordField.text ?? ""
-        let alert = UIAlertController(title: "已保存", message: nil, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "好", style: .default))
-        present(alert, animated: true)
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        refreshStatus()
+    }
+
+    private func refreshStatus() {
+        let base = WebDavConnectionTester.normalizedBase(Settings.shared.webDavURL)
+        if base.isEmpty {
+            statusCard.text = "尚未配置 WebDAV 服务器。\n配置后可将本地数据备份到自己的网盘。"
+        } else {
+            let account = Settings.shared.webDavAccount
+            statusCard.text = "服务器：\(base)\n账号：\(account.isEmpty ? "（未填写）" : account)"
+        }
+    }
+
+    @objc private func openEdit() {
+        present(WebDavEditDialogViewController(), animated: true)
+    }
+
+    @objc private func openBackup() {
+        present(BackupSheetViewController(), animated: true)
     }
 }
 

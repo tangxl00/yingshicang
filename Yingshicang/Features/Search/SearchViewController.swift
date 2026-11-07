@@ -16,6 +16,13 @@ final class SearchViewController: SwipeBackViewController, UITextFieldDelegate {
     private let statusLabel = UILabel.make(size: 13, color: DesignTokens.Colors.text, lines: 0)
 
     private var results: [VodItem] = []
+    /// R-05 聚合原始结果（二次筛选/屏蔽源在它的副本上做，避免丢失全量数据）。
+    private var allResults: [VodItem] = []
+    /// R-05 二次筛选候选词与当前选中集合。
+    private var secondaryTokens: [String] = []
+    private var selectedTokens: Set<String> = []
+    private let filterBar = UIScrollView()
+    private let filterStack = UIStackView.horizontal(spacing: DesignTokens.dp(8))
     private var searchToken = 0
     private var keyword: String = ""
 
@@ -147,23 +154,96 @@ final class SearchViewController: SwipeBackViewController, UITextFieldDelegate {
         resultTable.delegate = self
         resultTable.register(SearchResultCell.self, forCellReuseIdentifier: SearchResultCell.reuseID)
         resultTable.isHidden = true
+        resultTable.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(resultTable)
+        // R-05 二次筛选条：候选词横向滚动；未选中任何词时整条隐藏（stack 自动收起）。
+        filterBar.showsHorizontalScrollIndicator = false
+        filterBar.isHidden = true
+        filterBar.addSubview(filterStack)
+        filterStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            filterStack.leadingAnchor.constraint(equalTo: filterBar.contentLayoutGuide.leadingAnchor),
+            filterStack.trailingAnchor.constraint(equalTo: filterBar.contentLayoutGuide.trailingAnchor),
+            filterStack.topAnchor.constraint(equalTo: filterBar.contentLayoutGuide.topAnchor),
+            filterStack.bottomAnchor.constraint(equalTo: filterBar.contentLayoutGuide.bottomAnchor),
+            filterStack.heightAnchor.constraint(equalTo: filterBar.frameLayoutGuide.heightAnchor)
+        ])
+
+        let resultColumn = UIStackView.vertical(spacing: DesignTokens.dp(8))
+        resultColumn.translatesAutoresizingMaskIntoConstraints = false
+        resultColumn.addArrangedSubview(filterBar)
+        resultColumn.addArrangedSubview(resultTable)
+        filterBar.heightAnchor.constraint(equalToConstant: DesignTokens.dp(30)).isActive = true
+        view.addSubview(resultColumn)
+
         statusLabel.textAlignment = .center
         statusLabel.isHidden = true
         view.addSubview(statusLabel)
 
+        // R-05 长按结果行 → 屏蔽该源。
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleResultLongPress(_:)))
+        resultTable.addGestureRecognizer(longPress)
+
         let top = historyWrap
         NSLayoutConstraint.activate([
-            resultTable.topAnchor.constraint(equalTo: top.bottomAnchor,
-                                            constant: DesignTokens.Metrics.historyMarginTop),
-            resultTable.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            resultTable.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            resultTable.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            resultColumn.topAnchor.constraint(equalTo: top.bottomAnchor,
+                                              constant: DesignTokens.Metrics.historyMarginTop),
+            resultColumn.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            resultColumn.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            resultColumn.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             statusLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.dp(24)),
             statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.dp(24))
         ])
+    }
+
+    // MARK: - R-05 二次筛选 / 屏蔽源
+
+    /// 依据选中词重算展示列表并重建筛选条（词选中态互斥刷新）。
+    private func applySecondaryFilter() {
+        let selected = secondaryTokens.filter { selectedTokens.contains($0) }
+        results = SearchResultSecondaryFilter.filter(allResults, selectedTokens: selected)
+        resultTable.reloadData()
+        rebuildFilterBar()
+    }
+
+    private func rebuildFilterBar() {
+        filterStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        filterBar.isHidden = secondaryTokens.isEmpty
+        for token in secondaryTokens {
+            let isSelected = selectedTokens.contains(token)
+            let button = UIButton.capsule(token, size: 12, height: 28, corner: DesignTokens.Corner.xl)
+            button.setTitleColor(isSelected ? .white : DesignTokens.Colors.text, for: .normal)
+            button.backgroundColor = isSelected ? DesignTokens.Colors.main : DesignTokens.Colors.cardWhite
+            button.addAction(UIAction { [weak self] _ in
+                guard let self = self else { return }
+                if self.selectedTokens.contains(token) {
+                    self.selectedTokens.remove(token)
+                } else {
+                    self.selectedTokens.insert(token)
+                }
+                self.applySecondaryFilter()
+            }, for: .touchUpInside)
+            filterStack.addArrangedSubview(button)
+        }
+    }
+
+    @objc private func handleResultLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        let point = gesture.location(in: resultTable)
+        guard let indexPath = resultTable.indexPathForRow(at: point), indexPath.row < results.count else { return }
+        let item = results[indexPath.row]
+        let alert = UIAlertController(title: "屏蔽来源「\(item.siteKey)」",
+                                      message: "屏蔽后搜索将跳过该站点，可在「我的 → 站点管理」恢复。",
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "屏蔽", style: .destructive) { [weak self] _ in
+            guard let self = self else { return }
+            SiteBlockStore.shared.setBlocked(item.siteKey, blocked: true)
+            self.allResults.removeAll { $0.siteKey == item.siteKey }
+            self.applySecondaryFilter()
+        })
+        present(alert, animated: true)
     }
 
     // MARK: - 搜索
@@ -232,8 +312,10 @@ final class SearchViewController: SwipeBackViewController, UITextFieldDelegate {
 
         group.notify(queue: .main) { [weak self] in
             guard let self = self, self.searchToken == token else { return }
-            self.results = collected
-            self.resultTable.reloadData()
+            self.allResults = collected
+            self.secondaryTokens = SearchResultSecondaryFilter.tokens(from: word)
+            self.selectedTokens = []
+            self.applySecondaryFilter()
             self.resultTable.isHidden = collected.isEmpty
             if collected.isEmpty {
                 self.statusLabel.isHidden = false

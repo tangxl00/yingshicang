@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// 收藏记录。
-struct FavoriteRecord: Codable, FetchableRecord, PersistableRecord, TableRecord {
+struct FavoriteRecord: Codable, Equatable, FetchableRecord, PersistableRecord, TableRecord {
     static let databaseTableName = "favorite"
     var id: Int64?
     var siteKey: String
@@ -24,7 +24,7 @@ struct FavoriteRecord: Codable, FetchableRecord, PersistableRecord, TableRecord 
 }
 
 /// 历史记录。「历史记录合并」开关打开时按播出片名合并（见 HistoryStore）。
-struct HistoryRecord: Codable, FetchableRecord, PersistableRecord, TableRecord {
+struct HistoryRecord: Codable, Equatable, FetchableRecord, PersistableRecord, TableRecord {
     static let databaseTableName = "history"
     var id: Int64?
     var siteKey: String

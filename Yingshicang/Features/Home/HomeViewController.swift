@@ -66,6 +66,10 @@ final class HomeViewController: UIViewController {
         tabPopButton.tintColor = DesignTokens.Colors.text
         tabPopButton.alpha = 0.3
         tabPopButton.isHidden = true
+        // R-52：分类展开浮层入口（categories 非空时在 rebuildCategoryTabs 里显示）。
+        tabPopButton.addAction(UIAction { [weak self] _ in
+            self?.openCategorySheet()
+        }, for: .touchUpInside)
         tabPopButton.translatesAutoresizingMaskIntoConstraints = false
         tabRow.addSubview(tabPopButton)
 
@@ -126,6 +130,8 @@ final class HomeViewController: UIViewController {
                 switch result {
                 case .success(let list):
                     self.categories = list
+                    // R-52：有真实分类才显示展开浮层入口。
+                    self.tabPopButton.isHidden = list.isEmpty
                     if list.isEmpty {
                         self.addCategoryButton(title: firstSite.displayName, index: 0)
                     } else {
@@ -156,6 +162,17 @@ final class HomeViewController: UIViewController {
 
     @objc private func selectCategory(_ sender: UIButton) {
         loadCategory(index: sender.tag)
+    }
+
+    /// R-52：展开全部分类浮层，点选后走同一条 loadCategory 链路。
+    private func openCategorySheet() {
+        guard !categories.isEmpty else { return }
+        let sheet = CategorySheetViewController(categories: categories,
+                                                selectedIndex: currentCategoryIndex)
+        sheet.onSelect = { [weak self] index in
+            self?.loadCategory(index: index)
+        }
+        present(sheet, animated: true)
     }
 
     private func updateCategorySelection() {

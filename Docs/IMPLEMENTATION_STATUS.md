@@ -17,8 +17,8 @@
 | R-02 | 主页内容区 | 已实现 | `Features/Home/HomeViewController.swift`（搜索栏 + 分类 Tab + 内容区） |
 | R-03 | 内容卡片（海报墙） | 已实现 | `UI/Components/PosterCells.swift`；3 种样式受「海报展示样式」开关切换 |
 | R-04 | 快搜页 | 已实现 | `Features/Search/SearchViewController.swift`：热搜区 + 历史 chip + 清空 |
-| R-05 | 快搜结果区 | 部分 | 已实现分组聚合与「搜索(n/N)」计数；缺分词二次筛选、结果区长按屏蔽源 |
-| R-06 | 筛选弹窗 | 部分 | 分类内容页支持分类维度取值，缺 470dp 底部弹层与拖拽条形态 |
+| R-05 | 快搜结果区 | 已实现 | build 22：分组聚合 + 「搜索(n/N)」计数 + `SearchSecondaryFilter` 分词二次筛选（2-gram 候选词横条，全词 AND 过滤）+ 结果区长按「屏蔽来源」（`SiteBlockStore` 持久化，屏蔽后即时收缩列表） |
+| R-06 | 筛选弹窗 | 已实现 | build 22：`FilterSheetViewController` 470dp 底部弹层（拖拽条 + 逐维度胶囊 + 重置/确定），`FilterSheetParser` 解析站点 filter JSON（顶层 class 对象与数组两形态）、extend 剔空值；`CategoryContentViewController` 筛选按钮（filterable 且有维度才显示）接线重拉 |
 | R-07 | 榜单页 | 未实现 | 无榜单页代码 |
 | R-08 | 按条件筛选弹窗 | 未实现 | 无全屏条件筛选弹层 |
 | R-09 | 指定搜索源弹窗 | 已实现 | `Features/Mine/MineSubPages.swift` 站点管理（`toggleSite`）；`Core/Storage/SiteBlockStore.swift` 持久化 |
@@ -40,7 +40,7 @@
 | R-25 | 我的页 | 已实现 | `Features/Mine/MineViewController.swift`（`buildEntries` / `route`） |
 | R-26 | 我的页功能格 | 已实现 | 同上，8 个功能入口 |
 | R-27 | 设置总页 | 已实现 | `MineSubPages.buildRows` 分组行 |
-| R-28 | 输入配置地址 | 部分 | 入口与拉取链路已通（`ConfigRepository`）；缺本地文件导入与 220dp 圆角弹层形态 |
+| R-28 | 输入配置地址 | 已实现 | build 22：`AddStoreDialogViewController` 220dp 居中弹层（地址/名称双字段 + 本地导入 + 添加并加载）；本地导入走 `LocalConfigImporter`（UIDocumentPicker 选 JSON → `ConfigParser.parseResult` → 入库，全程无网络） |
 | R-29 | 多仓管理 | 已实现 | `Core/Config/StoreHouseStore.swift` + `MineSubPages.addStore` |
 | R-30 | 个性化设置 | 已实现 | `MineSubPages` 的 `pickPosterStyle`/`pickSearchMode`/`pickThreadCount` 等 |
 | R-31 | 添加 / 扫码快捷弹窗 | 部分 | 「配置」入口已通；扫码入口未实现（无摄像头） |
@@ -57,19 +57,19 @@
 | R-42 | TV 互动 | 未实现 | 仅「互动交流」占位说明页，无局域网下发 |
 | R-43 | 局域网同步弹窗 | 未实现 | 无局域网设备发现 |
 | R-44 | 扫码页 | 未实现 | 无摄像头扫描 |
-| R-45 | WebDAV 设置 | 部分 | 有「WebDAV 备份」入口与凭据存储；缺 340dp 弹层与连接测试 |
-| R-46 | 备份还原 | 部分 | 入口已通；缺双栏备份列表与上传下载 |
-| R-47 | H5 容器页族 | 部分 | 通用 WebView 容器可承载外部页；缺各子类入口与授权回传 |
+| R-45 | WebDAV 设置 | 已实现 | build 22：`WebDavEditDialogViewController` 340dp 居中弹层（三凭据字段 + 测试连接 + 保存）；`WebDavConnectionTester` PROPFIND Depth 0 探测，五态分类（成功/未授权/路径不存在/非 WebDAV/传输失败），Keychain 存密码 |
+| R-46 | 备份还原 | 已实现 | build 22：`BackupSheetViewController` 450dp 底部弹层（1.3:2.0 双栏：图标+说明 / 上传·下载双按钮）；`BackupPayload` 打包历史+收藏+屏蔽源为 `yingshicang-backup.json`，`BackupTransfer` PUT 上传 / GET 下载恢复（404 判无备份） |
+| R-47 | H5 容器页族 | 部分 | build 22：`WebContainerViewController` 通用 H5 容器（`JSRequestPolicy` 导航准入：协议白名单 + 内网拦截）+ 授权回传（tok/token/access_token 提取即回调关闭，令牌不落页面）已落地；业务子类入口待网盘批次（R-48/49）接线 |
 | R-48 | 阿里 Token 输入 | 未实现 | 无 32 位 token 弹层 |
 | R-49 | 推送播放 | 未实现 | 无局域网推送 |
 | R-50 | 频道密码 | 未实现 | 无密码校验弹层 |
 | R-51 | 通用列表选择弹窗 | 已实现 | `MineSubPages` 复用选择器（内核/倍速/海报样式/搜索模式/跳过） |
-| R-52 | 分类标签浮层 | 部分 | 分类管理入口已通（`addCategoryButton`）；缺全宽浮层形态 |
-| R-53 | 视频简介弹窗 | 部分 | 详情页内有简介区；缺独立弹窗与复用搜索栏 |
+| R-52 | 分类标签浮层 | 已实现 | build 22：`CategorySheetViewController` 400dp 贴底全宽浮层（拖拽条 + 3 列胶囊网格 + 当前分类高亮）；`HomeViewController` tabPop 按钮在 categories 非空时显示，点选走同一 `loadCategory` 链路 |
+| R-53 | 视频简介弹窗 | 已实现 | build 22：`IntroDialogViewController` 440dp 居中弹窗，完整 vodContent 不截断；顶部搜索栏（24dp 图标 + 30dp 输入框 + 40×24dp「精确」钮），`IntroTextSearcher` 子串/整词（ASCII 词边界）双模式命中主色高亮并滚动到首个命中；详情页简介区点击进入 |
 | R-54 | 通用提示与免责弹窗 | 未实现 | 无免责弹窗 |
 | R-55 | 空态 / 加载 / 加载更多 | 已实现 | `CategoryContentViewController.showStatus` 三态文案 |
 
-**统计**：已实现 35 项，部分实现 14 项，未实现 5 项，平台级不支持 2 项 —— 合计 56（R-01~R-55，含 R-17/R-24 等重复编号计入同一条目）。build 22 新增已实现：R-11 / R-12 / R-13 / R-14 / R-18 / R-19 / R-24 / F-10 / F-12。
+**统计**：已实现 42 项，部分实现 7 项，未实现 5 项，平台级不支持 2 项 —— 合计 56（R-01~R-55，含 R-17/R-24 等重复编号计入同一条目）。build 22 第一批新增已实现：R-11 / R-12 / R-13 / R-14 / R-18 / R-19 / R-24 / F-10 / F-12；第二批（范围B）：R-05 / R-06 / R-28 / R-45 / R-46 / R-52 / R-53。
 
 ## 二、核心功能清单（F-01 ~ F-20）
 
