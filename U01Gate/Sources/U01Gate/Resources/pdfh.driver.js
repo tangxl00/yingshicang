@@ -55,7 +55,7 @@ globalThis.pdfa = function (html, rule) {
 globalThis.pd = function (html, rule, baseUrl) {
   var value = globalThis.pdfh(html, rule);
   if (!value) return '';
-  if (/^https?:\\/\\//i.test(value)) return value;
+  if (/^https?:\/\//i.test(value)) return value;
   if (!baseUrl) return value;
   if (value.indexOf('//') === 0) return 'https:' + value;
   var base = String(baseUrl);
