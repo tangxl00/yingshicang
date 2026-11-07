@@ -21,6 +21,12 @@ final class MainTabBarController: UITabBarController {
     private let customTabBar = TabBarView()
     /// R-24 底部悬浮播放记录条（悬在 Tab 栏上方）。
     private let floatBar = FloatHistoryBar()
+    /// R-32 摇一摇（CoreMotion 可注入），触发后从当前站点推荐数据随机挑一部打开详情。
+    private lazy var shakeController = ShakeGestureController { [weak self] in
+        self?.handleShakeRecommendation()
+    }
+    /// R-32 防重入：上一次摇一摇推荐详情未关闭前忽略后续触发。
+    private var isPresentingShakeRecommendation = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -33,6 +39,50 @@ final class MainTabBarController: UITabBarController {
         selectedIndex = 0
         customTabBar.selectedIndex = 0
         tabBar.isHidden = true
+        presentDisclaimerIfFirstLaunch()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // R-32 摇一摇随主壳生效（播放等全屏页关闭后恢复监听）。
+        shakeController.start()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        shakeController.stop()
+    }
+
+    // MARK: - R-54 免责声明（仅首启 + 持久化）
+
+    private func presentDisclaimerIfFirstLaunch() {
+        guard !DisclaimerGate.isAccepted() else { return }
+        present(DisclaimerDialogViewController(), animated: true)
+    }
+
+    // MARK: - R-32 摇一摇随机推荐
+
+    private func handleShakeRecommendation() {
+        guard !isPresentingShakeRecommendation else { return }
+        guard let site = ConfigRepository.shared.currentBundle.sites.first(where: { !$0.isJarSpider }) else { return }
+        let provider = SiteProviderFactory.make(site: site)
+        provider.home { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self, !self.isPresentingShakeRecommendation else { return }
+                switch result {
+                case .success(let list):
+                    guard let picked = ShakeRecommendationPicker.pick(list) else { return }
+                    let controller = DetailViewController(item: picked)
+                    controller.modalPresentationStyle = .fullScreen
+                    self.isPresentingShakeRecommendation = true
+                    self.present(controller, animated: true) { [weak self] in
+                        self?.isPresentingShakeRecommendation = false
+                    }
+                case .failure:
+                    break // 摇一摇失败不打扰用户（原版亦静默）
+                }
+            }
+        }
     }
 
     override func viewDidAppear(_ animated: Bool) {

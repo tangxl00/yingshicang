@@ -29,7 +29,7 @@
 | 本地视频导入 | iOS 沙箱限制，无法像 Android 一样扫描文件系统 | 「本地数据」页说明受限 |
 | 应用内自更新 | App Store / 企业签分发模型下无 Android 式自更新通道 | 「检查更新」页说明 iOS 无自更新通道 |
 | DLNA 投屏 / P2P | 未在本版实现 | 不展示对应入口 |
-| 互动交流 | 未接入 H5 互动页 | 占位说明页 |
+| 应用列表（R-40） | iOS 沙箱无法枚举已安装应用（无 Android PackageManager 等价 API） | 「我的」页不展示应用列表入口 |
 
 ## 按用户要求移除的功能（v2.0.50 build 21）
 
@@ -59,7 +59,9 @@ Codable 将其作为未知键静默跳过——**加载含 `lives` 的配置不�
 
 | 项目 | 原状态 | 处理 | 理由 |
 | --- | --- | --- | --- |
-| `NSCameraUsageDescription` | 已声明 | **删除** | 全仓 0 处 `AVCaptureDevice` / 相机相关调用，本版无扫码、无拍摄功能 |
+| `NSCameraUsageDescription` | build 21 删除 | **build 22 回填** | 扫码页（R-44）落地：`ScanCodeViewController` 使用 `AVCaptureSession` 扫二维码，声明与实现对齐 |
+| `NSLocalNetworkUsageDescription` | build 21 删除 | **build 22 回填** | 局域网同步（R-43/F-18）落地：`BonjourDeviceFinder` 需本地网络权限做设备发现 |
+| `NSBonjourServices`（`_yingshicang._tcp` / `_http._tcp`） | build 21 删除 | **build 22 回填** | 与 `LANSyncServiceDescriptor.advertisedTypes` 同源，`Info.plist` 有注释互指 |
 | `NSPhotoLibraryUsageDescription` | 已声明 | **删除** | 0 处 `PHPhotoLibrary` / `UIImagePickerController`；封面保存走网络下载到沙箱，不写相库 |
 | `NSPhotoLibraryAddUsageDescription` | 已声明 | **删除** | 同上，无相库写入路径 |
 | `NSMicrophoneUsageDescription` | 已声明 | **删除** | 0 处 `AVAudioRecorder` / `AVAudioSession` 录音类别；本版无录音、无语音搜索 |
@@ -79,3 +81,19 @@ Codable 将其作为未知键静默跳过——**加载含 `lives` 的配置不�
 - **Promise**：`callSpider` 对带 `then` 的返回值做真实收敛——挂原生 resolve/reject block 写状态盒、推进 JSC microtask、按 `promiseTimeout` 超时，超时报 `.promiseTimeout`、拒绝报 `.promiseRejected`，二者都是失败。
 - **`req` 准入**：`JSRequestPolicy` 先判协议前缀（在归一化之前拦 `data:` 等，防止被补成 `http://data:...` 绕过），再判内网/回环，最后按站点注册域白名单判定。
 - **`local` 隔离**：存储键加 `js.local.<scope>.` 前缀，站点之间不共享键空间。
+
+## build 22 新增能力与真机复测清单（CI 模拟器无法覆盖的项）
+
+build 22 批次三落地了 R-07/08/31/32/33/42/43/44/48/49/50/54、F-18/F-20、R-39（best-effort）。其中以下能力依赖真实硬件 / 真实局域网，**CI 模拟器只能验证逻辑层与降级路径，行为须真机复测**：
+
+| 能力 | 模拟器已验证 | 需真机确认 |
+| --- | --- | --- |
+| 扫码（R-44） | 权限分支逻辑、无相机兜底手动输入、2s 冷却常量 | 摄像头取流、取景框布局、真实二维码识别率 |
+| 摇一摇（R-32） | 合成加速度序列：静止不触发 / 上升沿触发 / 冷却防连触 | CoreMotion 真实传感器阈值手感（2.2 / 1.5s 是否需要按真机调参） |
+| 局域网发现（R-43/F-18） | 端点解析、服务类型声明、`Info.plist` 权限键 | Bonjour 真实设备发现（需另一台同网设备广播 `_yingshicang._tcp.`） |
+| 局域网推送（R-49）/ TV 互动（R-42） | URL/请求体构造、地址归一化 | 对 TV 端服务的真实联通性（`/sync/push`、`/interaction` 端点由 TV 侧实现） |
+| 下载任务（F-20） | 任务模型生命周期、持久化往返、去重 | ——（本版为登记层，分片落盘下载未实现，见下） |
+
+**F-20 边界说明**：本版下载任务管理是「入队 / 状态登记 / 列表管理」层（`DownloadTaskStore`，UserDefaults 持久化），不含 m3u8 分片真实落盘——iOS 前台沙箱下长时间分段下载受系统限制（后台任务约 30s–3min 即被挂起），完整下载需 `URLSession` background configuration + 后台续传会话，属于后续版本范围。当前用户可见行为：详情页「下载」把剧集登记进下载列表，列表支持状态查看 / 删除 / 清除已完成。
+
+**R-39 网盘边界说明**：阿里 Token 弹层（32 位 hex 校验 / 存取）与网盘状态页已落地；网盘内文件浏览与播放是 best-effort 骨架——实际可用性依赖阿里云盘开放接口（需真实 Token 与可用 API 域），沙箱与 CI 无法验证。

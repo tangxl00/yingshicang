@@ -419,13 +419,26 @@ final class DetailViewController: SwipeBackViewController {
         present(alert, animated: true)
     }
 
-    /// R-14 下载入口：F-20 下载任务管理落地前先占位提示。
+    /// F-20 下载入口：把当前影片全部剧集加入下载任务列表，并打开任务管理页。
     @objc private func downloadEntryTapped() {
-        let alert = UIAlertController(title: "下载",
-                                      message: "下载任务管理将在后续版本提供。",
-                                      preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "知道了", style: .default))
-        present(alert, animated: true)
+        guard !episodes.isEmpty else {
+            statusLabel.text = "该影片暂无可用剧集"
+            statusLabel.isHidden = false
+            return
+        }
+        var flag = ""
+        if let tabs = detail?.tabs {
+            flag = tabs.indices.contains(activeTab) ? tabs[activeTab] : (tabs.first ?? "")
+        }
+        let added = DownloadTaskStore.shared.add(vodItem: item, episodes: episodes, flag: flag)
+        let list = DownloadListViewController()
+        present(list, animated: true) { [weak self] in
+            guard let self = self else { return }
+            if added == 0 {
+                self.statusLabel.text = "全部剧集已在下载任务中"
+                self.statusLabel.isHidden = false
+            }
+        }
     }
 
     @objc private func playFirst() {

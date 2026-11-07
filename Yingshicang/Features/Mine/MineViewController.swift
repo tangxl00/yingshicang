@@ -25,6 +25,9 @@ final class MineViewController: UIViewController, UICollectionViewDataSource, UI
         case checkUpdate
         case about
         case interaction
+        case netdisk
+        case lanSync
+        case reward
     }
 
     private let headerView = UIView()
@@ -67,7 +70,10 @@ final class MineViewController: UIViewController, UICollectionViewDataSource, UI
             Entry(title: "个性化", icon: "paintpalette", action: .personality),
             Entry(title: "WebDAV 备份", icon: "icloud", action: .webDav),
             Entry(title: "本地数据", icon: "internaldrive", action: .localData),
+            Entry(title: "网盘", icon: "externaldrive", action: .netdisk),
+            Entry(title: "局域网同步", icon: "dot.radiowaves.left.and.right", action: .lanSync),
             Entry(title: "检查更新", icon: "arrow.down.circle", action: .checkUpdate),
+            Entry(title: "赞赏支持", icon: "heart.circle", action: .reward),
             Entry(title: "关于", icon: "info.circle", action: .about),
             Entry(title: "互动交流", icon: "bubble.left.and.bubble.right", action: .interaction)
         ]
@@ -154,6 +160,12 @@ final class MineViewController: UIViewController, UICollectionViewDataSource, UI
             presentFullScreen(AboutViewController())
         case .interaction:
             presentFullScreen(InteractionViewController())
+        case .netdisk:
+            presentFullScreen(NetdiskViewController())
+        case .lanSync:
+            present(LANSyncDialogViewController(), animated: true)
+        case .reward:
+            present(RewardDialogViewController(), animated: true)
         }
     }
 

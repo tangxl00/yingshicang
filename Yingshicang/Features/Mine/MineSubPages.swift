@@ -826,15 +826,3 @@ final class AboutViewController: SwipeBackViewController {
     }
 }
 
-/// 互动交流占位（原 APK 为内置 H5 反馈页，依赖其服务端）。
-final class InteractionViewController: SwipeBackViewController {
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = DesignTokens.Colors.mainBg
-        let label = UILabel.make(text: "互动交流\n\n原 APK 的反馈通道依赖其自带服务端，iOS 重写版未接入。",
-                                 size: 14, color: DesignTokens.Colors.text, lines: 0)
-        label.textAlignment = .center
-        view.addSubview(label)
-        label.pinEdges(to: view, insets: UIEdgeInsets(top: 80, left: 24, bottom: 24, right: 24))
-    }
-}

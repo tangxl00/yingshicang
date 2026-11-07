@@ -2,6 +2,8 @@
 
 基线：《需求与界面还原规格》56 界面条目 + 20 功能条目。状态取自本仓库实际代码（文件 + 方法），非设计意图。
 
+**build 22 终态统计**：已实现 61 / 部分 5（R-39 网盘 best-effort、R-47 H5 容器待网盘 API、F-09 VLC 未集成显式报错、F-19 备份上传下载、F-20 下载为登记层）/ 平台级不支持 4（R-20 DLNA、R-38 文件系统、R-40 应用列表、R-41 自更新）/ 按用户要求移除 5；**未实现 0**。
+
 **状态口径**
 
 - `已实现` — 代码路径完整落地，可从实现文件/方法直接定位
@@ -19,8 +21,8 @@
 | R-04 | 快搜页 | 已实现 | `Features/Search/SearchViewController.swift`：热搜区 + 历史 chip + 清空 |
 | R-05 | 快搜结果区 | 已实现 | build 22：分组聚合 + 「搜索(n/N)」计数 + `SearchSecondaryFilter` 分词二次筛选（2-gram 候选词横条，全词 AND 过滤）+ 结果区长按「屏蔽来源」（`SiteBlockStore` 持久化，屏蔽后即时收缩列表） |
 | R-06 | 筛选弹窗 | 已实现 | build 22：`FilterSheetViewController` 470dp 底部弹层（拖拽条 + 逐维度胶囊 + 重置/确定），`FilterSheetParser` 解析站点 filter JSON（顶层 class 对象与数组两形态）、extend 剔空值；`CategoryContentViewController` 筛选按钮（filterable 且有维度才显示）接线重拉 |
-| R-07 | 榜单页 | 未实现 | 无榜单页代码 |
-| R-08 | 按条件筛选弹窗 | 未实现 | 无全屏条件筛选弹层 |
+| R-07 | 榜单页 | 已实现 | build 22：`Features/Home/RankListViewController.swift`（provider.home 榜单、rankLimit=50、160dp 卡片行 + 角标），入口在首页搜索栏右侧榜单按钮 |
+| R-08 | 按条件筛选弹窗 | 已实现 | build 22：`Features/Home/ConditionFilterViewController.swift` 全屏页（FilterSheetParser 维度解析、350dp 滚动维度区、45dp 确定按钮、内置随机直开），入口在首页快捷弹窗 |
 | R-09 | 指定搜索源弹窗 | 已实现 | `Features/Mine/MineSubPages.swift` 站点管理（`toggleSite`）；`Core/Storage/SiteBlockStore.swift` 持久化 |
 | R-10 | 播放页 | 已实现 | `Features/Player/PlayerViewController.swift` |
 | R-11 | 播放预览层 | 已实现 | build 22：`DetailViewController` 模糊背景（海报放大铺底 + 暗色遮罩）+ 海报左下角评分角标（无评分自动隐藏） |
@@ -43,30 +45,30 @@
 | R-28 | 输入配置地址 | 已实现 | build 22：`AddStoreDialogViewController` 220dp 居中弹层（地址/名称双字段 + 本地导入 + 添加并加载）；本地导入走 `LocalConfigImporter`（UIDocumentPicker 选 JSON → `ConfigParser.parseResult` → 入库，全程无网络） |
 | R-29 | 多仓管理 | 已实现 | `Core/Config/StoreHouseStore.swift` + `MineSubPages.addStore` |
 | R-30 | 个性化设置 | 已实现 | `MineSubPages` 的 `pickPosterStyle`/`pickSearchMode`/`pickThreadCount` 等 |
-| R-31 | 添加 / 扫码快捷弹窗 | 部分 | 「配置」入口已通；扫码入口未实现（无摄像头） |
-| R-32 | 摇一摇推荐 | 未实现 | 无摇一摇与随机推荐 |
-| R-33 | 每日赞赏 | 未实现 | 无运营弹窗 |
+| R-31 | 添加 / 扫码快捷弹窗 | 已实现 | build 22：首页搜索栏右侧「+」弹 `QuickAddPopupViewController`（180dp 居中）：扫码添加配置 → `ScanCodeViewController`；条件筛选 → `ConditionFilterViewController` |
+| R-32 | 摇一摇推荐 | 已实现 | build 22：`Features/Home/ShakeGesture.swift`（CoreMotion 30Hz、阈值 2.2、冷却 1.5s、上升沿触发）+ `ShakeRecommendationPicker` 随机挑选，`MainTabBarController` viewWillAppear/didDisappear 启停；传感器精度需真机复测 |
+| R-33 | 每日赞赏 | 已实现 | build 22：`Features/Mine/RewardDialog.swift` 赞赏弹窗（400dp 居中、二维码占位、联系邮箱复制），我的页「赞赏支持」入口 |
 | R-34 | 直播 Tab | 按用户要求移除 | v2.0.50 build 21 真机验收后移除（`Features/Live/` 整目录删除，Tab 5→3），见 KNOWN_DIFFERENCES「按用户要求移除的功能」 |
 | R-35 | 直播设置弹窗 | 按用户要求移除 | 随 R-34 一并删除 |
 | R-36 | 直播频道选择弹窗 | 按用户要求移除 | 随 R-34 一并删除 |
 | R-37 | 直播控制层 | 按用户要求移除 | 随 R-34 一并删除 |
 | R-38 | 本地视频 | 平台级不支持 | iOS 沙箱不可扫描文件系统（见 `KNOWN_DIFFERENCES.md`） |
-| R-39 | 网盘 | 未实现 | 无网盘模块 |
-| R-40 | 应用列表 | 未实现 | 无已安装应用列表 |
-| R-41 | 应用更新弹窗 | 未实现 | iOS 无 Android 式自更新通道（见 `KNOWN_DIFFERENCES.md`） |
-| R-42 | TV 互动 | 未实现 | 仅「互动交流」占位说明页，无局域网下发 |
-| R-43 | 局域网同步弹窗 | 未实现 | 无局域网设备发现 |
-| R-44 | 扫码页 | 未实现 | 无摄像头扫描 |
+| R-39 | 网盘 | 部分 | build 22：`Features/Mine/AliTokenDialog.swift` 的 `NetdiskViewController` 状态页 + 32 位 hex Token 弹层（校验/存取）；网盘内文件浏览与播放为 best-effort 骨架，实际可用性依赖阿里云盘开放接口，未接真实 API |
+| R-40 | 应用列表 | 平台级不支持 | iOS 沙箱无法枚举已安装应用，已在 `KNOWN_DIFFERENCES.md` 重分类登记 |
+| R-41 | 应用更新弹窗 | 平台级不支持 | iOS 无 Android 式自更新通道（App Store 审核 2.5.2 禁止热更新，见 `KNOWN_DIFFERENCES.md`） |
+| R-42 | TV 互动 | 已实现 | build 22：`Features/Mine/InteractionPage.swift`（十键指令集、地址归一化、`POST {base}/interaction?key=` JSON 下发、URLSession 5s 超时），占位页已删除；真机局域网联动需实测 |
+| R-43 | 局域网同步弹窗 | 已实现 | build 22：`Features/Mine/LANSync.swift` 的 `LANSyncDialogViewController`（470dp 贴底、Bonjour 发现设备列表 + 手动输入兜底），我的页「局域网同步」入口；局域网发现需真机复测 |
+| R-44 | 扫码页 | 已实现 | build 22：`Features/Home/ScanCodeViewController.swift` AVCaptureSession QR 扫码（权限三分支处理 + 无相机兜底手动输入、2s 冷却），`Info.plist` 增 `NSCameraUsageDescription`；模拟器走手动输入路径，真机扫码需实测 |
 | R-45 | WebDAV 设置 | 已实现 | build 22：`WebDavEditDialogViewController` 340dp 居中弹层（三凭据字段 + 测试连接 + 保存）；`WebDavConnectionTester` PROPFIND Depth 0 探测，五态分类（成功/未授权/路径不存在/非 WebDAV/传输失败），Keychain 存密码 |
 | R-46 | 备份还原 | 已实现 | build 22：`BackupSheetViewController` 450dp 底部弹层（1.3:2.0 双栏：图标+说明 / 上传·下载双按钮）；`BackupPayload` 打包历史+收藏+屏蔽源为 `yingshicang-backup.json`，`BackupTransfer` PUT 上传 / GET 下载恢复（404 判无备份） |
-| R-47 | H5 容器页族 | 部分 | build 22：`WebContainerViewController` 通用 H5 容器（`JSRequestPolicy` 导航准入：协议白名单 + 内网拦截）+ 授权回传（tok/token/access_token 提取即回调关闭，令牌不落页面）已落地；业务子类入口待网盘批次（R-48/49）接线 |
-| R-48 | 阿里 Token 输入 | 未实现 | 无 32 位 token 弹层 |
-| R-49 | 推送播放 | 未实现 | 无局域网推送 |
-| R-50 | 频道密码 | 未实现 | 无密码校验弹层 |
+| R-47 | H5 容器页族 | 部分 | `WebContainerViewController` 通用 H5 容器（`JSRequestPolicy` 导航准入 + 授权回传）已落地；网盘批次未产生新的 H5 子类需求（R-48 走原生 Token 弹层而非 H5 授权页），如后续接阿里开放接口可复用 |
+| R-48 | 阿里 Token 输入 | 已实现 | build 22：`AliTokenDialogViewController`（220dp 居中）+ `AliTokenValidator`（去空白 normalize、32 位 hex 校验、清除按钮），读写 `Settings.shared.aliToken` |
+| R-49 | 推送播放 | 已实现 | build 22：`LANPushService`（`POST http://{host}:{port}/sync/push` JSON `BackupPayload`，URLSession 网络面可测），从局域网同步弹窗选定设备发起；对端行为需 TV 侧配合，真机复测 |
+| R-50 | 频道密码 | 已实现 | build 22：`Features/Home/ChannelPasswordDialog.swift`（`ChannelPasswordRule.needsPassword` 识别「密码/加密」频道 → 180dp 密码弹层，isSecureTextEntry，校验通过回调解锁进入分类内容） |
 | R-51 | 通用列表选择弹窗 | 已实现 | `MineSubPages` 复用选择器（内核/倍速/海报样式/搜索模式/跳过） |
 | R-52 | 分类标签浮层 | 已实现 | build 22：`CategorySheetViewController` 400dp 贴底全宽浮层（拖拽条 + 3 列胶囊网格 + 当前分类高亮）；`HomeViewController` tabPop 按钮在 categories 非空时显示，点选走同一 `loadCategory` 链路 |
 | R-53 | 视频简介弹窗 | 已实现 | build 22：`IntroDialogViewController` 440dp 居中弹窗，完整 vodContent 不截断；顶部搜索栏（24dp 图标 + 30dp 输入框 + 40×24dp「精确」钮），`IntroTextSearcher` 子串/整词（ASCII 词边界）双模式命中主色高亮并滚动到首个命中；详情页简介区点击进入 |
-| R-54 | 通用提示与免责弹窗 | 未实现 | 无免责弹窗 |
+| R-54 | 通用提示与免责弹窗 | 已实现 | build 22：`Features/Mine/DisclaimerDialog.swift`（`DisclaimerGate` 首启未同意判定 + 420dp 免责弹窗，同意持久化 UserDefaults），`MainTabBarController.viewDidLoad` 首启弹出 |
 | R-55 | 空态 / 加载 / 加载更多 | 已实现 | `CategoryContentViewController.showStatus` 三态文案 |
 
 **统计**：已实现 42 项，部分实现 7 项，未实现 5 项，平台级不支持 2 项 —— 合计 56（R-01~R-55，含 R-17/R-24 等重复编号计入同一条目）。build 22 第一批新增已实现：R-11 / R-12 / R-13 / R-14 / R-18 / R-19 / R-24 / F-10 / F-12；第二批（范围B）：R-05 / R-06 / R-28 / R-45 / R-46 / R-52 / R-53。
@@ -78,7 +80,7 @@
 | F-01 | 配置源接入 | 已实现 | `Core/Config/ConfigRepository.swift`：JSON + 容错 JSON 解析，`sites/parses/flags/wallpaper`（`lives` 自 build 21 起随直播移除，作为未知键忽略） |
 | F-02 | 多仓与线路管理 | 已实现 | `Core/Config/StoreHouseStore.swift`，仓→线路嵌套持久化 |
 | F-03 | 分类浏览 | 已实现 | `Core/Parsing/SiteProvider.swift` + `HTMLSiteProvider`/`JSSiteProvider` 分类与分页 |
-| F-04 | 筛选 | 部分 | 支持分类/筛选维度取值，缺筛选弹层 UI 与「重置」流程 |
+| F-04 | 筛选 | 已实现 | 分类筛选弹层（R-06 批次）+ R-08 全屏条件筛选页 + 默认选中/空值剔除逻辑（`FilterSheetParser.defaultSelections` / `extend`），随机直开复用 `ShakeRecommendationPicker` |
 | F-05 | 全局搜索 | 已实现 | `Features/Search/SearchViewController.performSearch`，按 `searchable` 参与 |
 | F-06 | 快搜（跨源并发） | 已实现 | 同上，聚合计数与分组结果 |
 | F-07 | 详情获取 | 已实现 | `Core/Parsing/DetailRule.swift` + `JSSiteProvider.parseDetail`（线路 tabs + 剧集 lists） |
@@ -92,9 +94,9 @@
 | F-15 | 收藏 | 已实现 | `Core/Storage/FavoriteStore.swift` |
 | F-16 | 播放历史 | 已实现 | `Core/Storage/HistoryStore.swift`，续播定位 |
 | F-17 | 直播 | 按用户要求移除 | v2.0.50 build 21 真机验收后移除：页面、解析与播放链路全删，`ConfigBundle.lives` 字段移除（配置含 `lives` 时静默忽略不报错） |
-| F-18 | 局域网同步 | 未实现 | 无局域网通道 |
+| F-18 | 局域网同步 | 已实现 | build 22：`BonjourDeviceFinder`（NetServiceBrowser，`_yingshicang._tcp.` / `_http._tcp.`，`Info.plist` 声明 `NSBonjourServices` + `NSLocalNetworkUsageDescription`）+ `LANSyncEndpoint` 解析 + `LANPushService` 推送；真机局域网行为需实测 |
 | F-19 | 备份还原 | 部分 | 凭据存储已通；备份包上传下载未实现 |
-| F-20 | 下载与投屏 | 未实现 | DLNA 平台级不支持；下载任务管理未实现 |
+| F-20 | 下载与投屏 | 部分 | 投屏（DLNA）平台级不支持（见 `KNOWN_DIFFERENCES.md`）；下载任务管理已实现：`Features/Detail/DownloadManager.swift`（五态任务模型、`DownloadTaskStore` UserDefaults 持久化、去重、`DownloadListViewController` 列表 + 清除已完成 + 左滑删除），详情页下载入口已接线。注意：本版任务模型为「入队/状态登记」层，m3u8 分片落盘下载未实现（iOS 后台长时下载限制，登记 KNOWN_DIFFERENCES） |
 
 ## 三、待确认清单（16 项）与本版取值
 
@@ -103,17 +105,17 @@
 | R-01 Tab 选中色 | 沿用 `DesignTokens` 主色 `#00C64E` | 规格未锁定色值，取已实测主色 |
 | R-12 手势区域划分 | 已实现（build 22）：左/右各 40% 为亮度/音量区、中央 20% 不触发，全高滑动生效（PlayerGestureLogic sideFraction 0.4 固化） | Java 层加固不可读 |
 | R-15 当前集高亮样式 | 选中态用主色描边 | 同上，色值不可读 |
-| R-20 投屏弹窗 | 未实现 | DLNA 未实现 |
-| R-38 删除本地视频 | 未实现 | 平台级不支持 |
-| R-44 扫码页叠加层 | 未实现 | 无摄像头 |
+| R-20 投屏弹窗 | 平台级不支持 | DLNA 见 KNOWN_DIFFERENCES |
+| R-38 删除本地视频 | 平台级不支持 | iOS 沙箱不可扫描文件系统 |
+| R-44 扫码页叠加层 | 已实现（build 22） | AVCaptureSession 扫码 + 无相机手动输入兜底 |
 | R-04 搜索防抖与联想 | 300ms 防抖，回车触发搜索 | 规格未给节流时长，取工程惯例 |
 | R-22 历史长按删除 | 长按直接删除，无二次确认 | 布局无确认控件 |
 | F-01 配置顶层键名 | `sites` / `parses` / `flags` / `wallpaper`（`lives` 已随直播移除） | 由界面与模板反证 |
 | F-02 仓→线路本地结构 | UserDefaults 键 `tpc_stores` | 与 Android 实测键名对齐 |
 | F-16 历史合并规则 | 按「片名 + 来源」合并 | 开关名可见、规则不可读，取语义最小实现 |
 | F-19 备份范围 | 未实现 | — |
-| F-20 投屏与下载 | 未实现 | — |
-| R-33 每日赞赏 | 未实现 | — |
+| F-20 投屏与下载 | 部分 | 投屏平台级不支持；下载任务管理已实现（登记层，分片落盘未实现） |
+| R-33 每日赞赏 | 已实现（build 22） | RewardDialog |
 | 播放内核 | 默认 AVPlayer，VLC 需集成 VLCKit | `canImport` 编译期探测 |
 | dp→pt 换算 | 1:1（160dpi 基准） | `DesignTokens/Metrics` 统一驱动 |
 

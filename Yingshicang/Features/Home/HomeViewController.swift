@@ -41,14 +41,49 @@ final class HomeViewController: UIViewController {
             column.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        // 搜索栏：左右 padding 14dp
+        // 搜索栏：左右 padding 14dp；右侧为 R-07 榜单入口与 R-31 添加快捷入口。
         let searchContainer = UIView()
         searchContainer.addSubview(searchBar)
-        searchBar.pinEdges(to: searchContainer, insets: UIEdgeInsets(top: 0, left: DesignTokens.Metrics.actionBarHorizontalPadding,
-                                                                   bottom: 0, right: DesignTokens.Metrics.actionBarHorizontalPadding))
+        searchBar.translatesAutoresizingMaskIntoConstraints = false
+        searchBar.topAnchor.constraint(equalTo: searchContainer.topAnchor).isActive = true
+        searchBar.bottomAnchor.constraint(equalTo: searchContainer.bottomAnchor).isActive = true
+        searchBar.leadingAnchor.constraint(equalTo: searchContainer.leadingAnchor,
+                                           constant: DesignTokens.Metrics.actionBarHorizontalPadding).isActive = true
         searchBar.heightAnchor.constraint(equalToConstant: 30).isActive = true
         searchContainer.heightAnchor.constraint(equalToConstant: 30).isActive = true
         searchBar.addTarget(self, action: #selector(openSearch), for: .touchUpInside)
+
+        let rankButton = UIButton(type: .system)
+        rankButton.setImage(UIImage(systemName: "list.number"), for: .normal)
+        rankButton.tintColor = DesignTokens.Colors.text
+        rankButton.addAction(UIAction { [weak self] _ in
+            self?.openRank()
+        }, for: .touchUpInside)
+        rankButton.translatesAutoresizingMaskIntoConstraints = false
+        searchContainer.addSubview(rankButton)
+
+        // R-31 添加快捷弹窗入口（扫码 / 条件筛选）。
+        let quickAddButton = UIButton(type: .system)
+        quickAddButton.setImage(UIImage(systemName: "plus"), for: .normal)
+        quickAddButton.tintColor = DesignTokens.Colors.text
+        quickAddButton.addAction(UIAction { [weak self] _ in
+            self?.openQuickAddPopup()
+        }, for: .touchUpInside)
+        quickAddButton.translatesAutoresizingMaskIntoConstraints = false
+        searchContainer.addSubview(quickAddButton)
+
+        NSLayoutConstraint.activate([
+            rankButton.leadingAnchor.constraint(equalTo: searchBar.trailingAnchor, constant: DesignTokens.dp(8)),
+            rankButton.centerYAnchor.constraint(equalTo: searchContainer.centerYAnchor),
+            rankButton.widthAnchor.constraint(equalToConstant: 28),
+            rankButton.heightAnchor.constraint(equalToConstant: 30),
+            quickAddButton.leadingAnchor.constraint(equalTo: rankButton.trailingAnchor, constant: DesignTokens.dp(4)),
+            quickAddButton.trailingAnchor.constraint(equalTo: searchContainer.trailingAnchor,
+                                                     constant: -DesignTokens.Metrics.actionBarHorizontalPadding),
+            quickAddButton.centerYAnchor.constraint(equalTo: searchContainer.centerYAnchor),
+            quickAddButton.widthAnchor.constraint(equalToConstant: 28),
+            quickAddButton.heightAnchor.constraint(equalToConstant: 30)
+        ])
         column.addArrangedSubview(searchContainer)
 
         // 分类 Tab 行：marginLeft 5dp
@@ -189,6 +224,20 @@ final class HomeViewController: UIViewController {
         updateCategorySelection()
         guard index < categories.count || !sites.isEmpty else { return }
         let categoryId = index < categories.count ? categories[index].id : ""
+        // R-50：加密频道（分类名含「密码/加密」）先弹密码校验层，通过后才展示内容。
+        if index < categories.count,
+           ChannelPasswordRule.needsPassword(categoryName: categories[index].name) {
+            present(ChannelPasswordDialogViewController(
+                categoryName: categories[index].name,
+                expectedPassword: nil) { [weak self] in
+                    self?.showCategoryContent(categoryId: categoryId)
+            }, animated: true)
+            return
+        }
+        showCategoryContent(categoryId: categoryId)
+    }
+
+    private func showCategoryContent(categoryId: String) {
         contentController?.willMove(toParent: nil)
         contentController?.view.removeFromSuperview()
         contentController?.removeFromParent()
@@ -206,5 +255,97 @@ final class HomeViewController: UIViewController {
         let controller = SearchViewController()
         controller.modalPresentationStyle = .fullScreen
         present(controller, animated: true)
+    }
+
+    // MARK: - R-07 榜单 / R-31 快捷入口
+
+    /// R-07 榜单入口：当前首站点的推荐数据榜单。
+    private func openRank() {
+        let controller = RankListViewController(site: sites.first)
+        present(controller, animated: true)
+    }
+
+    /// R-31 添加快捷弹窗：宽 180dp、项高 30dp、paddingTop 10dp（Metrics.addPopupXXX）。
+    /// 项：① 扫码添加配置（R-44/R-31）② 条件筛选（R-08）。
+    private func openQuickAddPopup() {
+        let popup = QuickAddPopupViewController()
+        popup.onScanCode = { [weak self] in
+            guard let self = self else { return }
+            let scanner = ScanCodeViewController { [weak self] value in
+                DispatchQueue.main.async {
+                    self?.addScannedConfig(urlString: value)
+                }
+            }
+            self.present(scanner, animated: true)
+        }
+        popup.onConditionFilter = { [weak self] in
+            guard let self = self else { return }
+            let controller = ConditionFilterViewController(site: self.sites.first)
+            self.present(controller, animated: true)
+        }
+        present(popup, animated: true)
+    }
+
+    /// R-44/R-31 扫码结果 → 走与手动添加一致的网络加载链路。
+    private func addScannedConfig(urlString: String) {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        ConfigRepository.shared.load(urlString: trimmed) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    StoreHouseStore.shared.add(ConfigStore(
+                        name: "扫码导入",
+                        url: trimmed,
+                        lines: [ConfigLine(name: "扫码导入", url: trimmed)]))
+                case .failure(let error):
+                    Log.warn("[Home] scanned config load failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+}
+
+/// R-31 添加快捷弹窗：180dp 窄弹窗，列表两项（项高 30dp，paddingTop 10dp）。
+final class QuickAddPopupViewController: CardDialogViewController {
+    var onScanCode: (() -> Void)?
+    var onConditionFilter: (() -> Void)?
+
+    init() {
+        super.init(config: CardDialogViewController.Config(
+            title: "添加",
+            height: DesignTokens.dp(150),
+            width: DesignTokens.dp(DesignTokens.Metrics.addPopupWidth),
+            anchor: .center,
+            showsCloseButton: false
+        ))
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    override func buildBody(into stack: UIStackView) {
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.layoutMargins = UIEdgeInsets(top: DesignTokens.dp(DesignTokens.Metrics.sheetContentPaddingTop - 5),
+                                           left: 0, bottom: 0, right: 0)
+
+        let scanItem = UIButton.text("扫码添加配置", size: 14, color: .white)
+        scanItem.contentHorizontalAlignment = .left
+        scanItem.addAction(UIAction { [weak self] _ in
+            let callback = self?.onScanCode
+            self?.dismiss(animated: true) { callback?() }
+        }, for: .touchUpInside)
+        stack.addArrangedSubview(scanItem)
+
+        let filterItem = UIButton.text("条件筛选", size: 14, color: .white)
+        filterItem.contentHorizontalAlignment = .left
+        filterItem.addAction(UIAction { [weak self] _ in
+            let callback = self?.onConditionFilter
+            self?.dismiss(animated: true) { callback?() }
+        }, for: .touchUpInside)
+        stack.addArrangedSubview(filterItem)
+
+        for item in [scanItem, filterItem] {
+            item.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.addPopupItemHeight).isActive = true
+        }
     }
 }
