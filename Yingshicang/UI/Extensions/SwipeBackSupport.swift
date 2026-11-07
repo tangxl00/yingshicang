@@ -13,7 +13,8 @@ import UIKit
 /// **没有任何全屏横向 pan 手势**，所以不存在「快进横滑 vs 边缘返回」的冲突。
 /// 即便如此，本实现仍只认**屏幕最左侧 24pt** 起手的拖动，
 /// 且 `cancelsTouchesInView = false`，不会截获滑块与列表内部的拖动。
-final class SwipeBackViewController: UIViewController, UIGestureRecognizerDelegate {
+/// 注意：**不能是 final**——14 个二级页面（Detail/Search/Player/我的子页等）都要继承它。
+class SwipeBackViewController: UIViewController, UIGestureRecognizerDelegate {
 
     /// 边缘识别宽度。取 24pt：足够窄，不会与内容区横向拖动（滑块、横向滚动列表）混淆。
     private static let edgeWidth: CGFloat = 24
