@@ -121,5 +121,6 @@
 
 - 拓扑：`gate-u01 → unit-tests → build-device → package-ipa → upload-artifacts`，runner 固定 `macos-15`
 - U-01 判定：**A**（原生组 5 条 + 垫片对照组 2 条全绿，维持 JS 引擎 + cheerio 设计）
-- 免签 IPA：`Payload/Yingshicang.app` 布局，嵌套 framework 完整，不含 `embedded.mobileprovision`；`CODE_SIGNING_ALLOWED=NO` 只影响签名不影响编译
+- 免签 IPA：`Payload/Yingshicang.app` 布局，主二进制自包含，不含 `embedded.mobileprovision`；`CODE_SIGNING_ALLOWED=NO` 只影响签名不影响编译
+  - **关于 Frameworks 目录（质检 P2-3 更正）**：本工程未启用 `ENABLE_DEBUG_DYLIB`（见 `project.yml` 的 `ENABLE_DEBUG_DYLIB: NO`），GRDB / SwiftSoup 两个 SPM 依赖以**静态库**形式链接进主二进制，因此 `Payload/Yingshicang.app` 下**没有** `Frameworks/` 目录；原文「嵌套 framework 完整」与产物实测不符，已按实际改写。验收判据相应改为：主二进制为单一自包含可执行文件（无 `*.debug.dylib` / `__preview.dylib` 伴生）、Info.plist 合法、无 provisioning profile。
 - 验收口径：`conclusion=success` 不等于测试通过，须读 `build-logs` 中 `xcodebuild test` 真实输出

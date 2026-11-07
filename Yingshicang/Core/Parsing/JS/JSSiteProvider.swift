@@ -8,13 +8,13 @@ import Foundation
 /// 3. 返回值为 Promise 的场景极少（原生 host 的 req 是同步的），但为兼容异步写法，这里对 Promise 也做 resolve。
 final class JSSiteProvider: SiteProvider {
     let site: SiteConfig
+    /// 站点专属引擎：按 `site.key` 从注册表取，不同站点互不共享 `JSContext`（质检 P1-3）。
+    /// 装载状态也放在引擎里：同一站点并发搜索只求值一次，不同站点各求值各的。
     private let engine: JSEngine
-    private var scriptLoaded = false
-    private let loadLock = NSLock()
 
-    init(site: SiteConfig, engine: JSEngine = .shared) {
+    init(site: SiteConfig, engines: JSEngineRegistry = .shared) {
         self.site = site
-        self.engine = engine
+        self.engine = engines.engine(for: site)
     }
 
     // MARK: - 脚本装载
@@ -22,37 +22,25 @@ final class JSSiteProvider: SiteProvider {
     /// 装载站点脚本。优先站点自带的脚本地址（api 为 .js），
     /// 其次回落到内置的 drpy 运行库（这样即使配置没有独立脚本，drpy 系站点也能走通）。
     private func ensureScriptLoaded() -> Bool {
-        loadLock.lock(); defer { loadLock.unlock() }
-        if scriptLoaded { return true }
-
-        if let script = loadSiteScript() {
-            // 站点脚本通常直接返回 `__jsEvalReturn()`，也可能只定义了个对象。
-            let wrapper = """
-            (function(){
-              var module = {exports:{}};
-              var exports = module.exports;
-              \(script)
-              if (globalThis.__JS_SPIDER__ === undefined) {
-                if (typeof __jsEvalReturn === 'function') { globalThis.__JS_SPIDER__ = __jsEvalReturn(); }
-                else if (module.exports && Object.keys(module.exports).length) { globalThis.__JS_SPIDER__ = module.exports; }
-              }
-            })();
-            """
-            if let error = engine.evaluate(wrapper, filename: "site-\(site.key).js") {
-                Log.error("[JS] site script failed: \(error)")
-                return false
-            }
-            scriptLoaded = true
-            return true
+        engine.loadOnce { [self] in
+            if let script = loadSiteScript() { return Self.wrapSiteScript(script) }
+            // 回落：内置 drpy bundle（打包时已把 cheerio 等依赖内联为单文件）。
+            return BundledScripts.drpy
         }
+    }
 
-        // 回落：内置 drpy bundle（打包时已把 cheerio 等依赖内联为单文件）。
-        if let error = engine.evaluate(BundledScripts.drpy, filename: "drpy.bundle.js") {
-            Log.error("[JS] drpy bundle failed: \(error)")
-            return false
-        }
-        scriptLoaded = true
-        return true
+    /// 站点脚本通常直接返回 `__jsEvalReturn()`，也可能只是定义了个对象；
+    /// 统一包一层，保证求值后 `globalThis.__JS_SPIDER__` 一定就位。
+    static func wrapSiteScript(_ script: String) -> String {
+        let head = "(function(){\n  var module = {exports:{}};\n  var exports = module.exports;\n"
+        let tail = """
+          if (globalThis.__JS_SPIDER__ === undefined) {
+            if (typeof __jsEvalReturn === 'function') { globalThis.__JS_SPIDER__ = __jsEvalReturn(); }
+            else if (module.exports && Object.keys(module.exports).length) { globalThis.__JS_SPIDER__ = module.exports; }
+          }
+        })();
+        """
+        return head + script + "\n" + tail
     }
 
     private func loadSiteScript() -> String? {
@@ -171,14 +159,21 @@ final class JSSiteProvider: SiteProvider {
         }
     }
 
+    /// drpy2 的 play 接收 flag 与 url，返回 `{parse,jx,url}`。
+    /// 本方法只负责「问脚本要初判结果」；lazy / 二次解析 / 嗅探由 `PlayResolver` 统一接管，
+    /// 因此 JS 站点与 HTML/API 站点走同一条播放管线（质检 P1-6）。
     func play(flag: String, url: String, completion: @escaping (Result<PlayResolution, SiteError>) -> Void) {
-        // drpy2 的 play 接收 flag 与 url，返回 `{parse,jx,url}`。
         let params: [String: Any] = ["flag": flag, "url": url]
         invokeRaw(method: "play", params: params) { result in
             switch result {
             case .failure(let error): completion(.failure(error))
             case .success(let value):
-                completion(.success(Self.parsePlay(value)))
+                let resolution = Self.parsePlay(value)
+                guard !resolution.url.isEmpty else {
+                    completion(.failure(.parse("spider.play 未返回播放地址")))
+                    return
+                }
+                completion(.success(resolution))
             }
         }
     }
@@ -211,30 +206,14 @@ final class JSSiteProvider: SiteProvider {
             // drpy2 的方法签名是 (setting, params)。部分规则脚本只要 params，
             // 传入两个参数不会影响只取第一个的脚本（多余参数被忽略）。
             let args: [Any] = [self.settingDictionary, params]
-            let raw = self.engine.callSpider(method, arguments: args)
-            let resolved = Self.resolvePromise(raw, engine: self.engine)
-            if let resolved = resolved {
-                completion(.success(resolved))
-            } else {
-                completion(.success(raw))
+            // Promise 收敛在引擎内部完成（真 `.then` 挂接 + 超时/拒绝传播，质检 P1-2）。
+            switch self.engine.callSpider(method, arguments: args) {
+            case .failure(let error):
+                completion(.failure(.parse(error.localizedDescription ?? "JS 调用失败")))
+            case .success(let value):
+                completion(.success(value))
             }
         }
-    }
-
-    /// 若 JS 返回 Promise，同步等待其 resolve。
-    /// drpy2 的 native 分支一般直接返回对象，但某些规则自己写了 async 函数，
-    /// 这里用 JS 侧的 `await` + 共享标志位把异步结果转成同步结果。
-    private static func resolvePromise(_ value: Any?, engine: JSEngine) -> Any? {
-        guard let dict = value as? [String: Any],
-              let then = dict["then"] else { return value }
-        _ = then
-        // 由于 JSC 没有直接的 Promise 等待 API，这里用轮询标志位的方式
-        // （drpy2 的 promise 通常在一次 req 网络调用内 resolve，轮询开销可忽略）。
-        let flagKey = "__js_async_result"
-        let engineRef = engine
-        engineRef.evaluate("globalThis.\(flagKey) = undefined; globalThis.__js_async_done = false;")
-        // 重新调用一次以拿到 Promise 并挂 then —— 由调用方脚本自行处理的情形下不进入此分支。
-        return value
     }
 
     // MARK: - 结果解析
@@ -323,11 +302,15 @@ final class JSSiteProvider: SiteProvider {
         return groups
     }
 
+    /// 把 spider 返回的 `{parse,jx,url}` 归一成 `PlayResolution`。
+    /// - `parse > 0 && jx > 0`：走 parses[] 的 `parse-1` 号解析源（二次解析，质检 P1-1）
+    /// - `parse > 0 && jx == 0`：本机嗅探
+    /// - 其余：视为直链
     static func parsePlay(_ value: Any?) -> PlayResolution {
         guard let dict = value as? [String: Any] else { return .empty }
         let url = (dict["url"] as? String) ?? ""
-        let parse = (dict["parse"] as? NSNumber)?.intValue ?? ((dict["parse"] as? Int) ?? 0)
-        let jx = (dict["jx"] as? NSNumber)?.intValue ?? 0
+        let parse = intValue(dict["parse"])
+        let jx = intValue(dict["jx"])
         if parse > 0 && jx > 0 {
             return PlayResolution(url: url, parseIndex: parse - 1, needSniff: false)
         }
@@ -335,6 +318,14 @@ final class JSSiteProvider: SiteProvider {
             return PlayResolution(url: url, parseIndex: nil, needSniff: true)
         }
         return PlayResolution(url: url, parseIndex: nil, needSniff: false)
+    }
+
+    /// 宽容取整：JS 侧可能给 number、字符串，或 Foundation 桥回来的 NSNumber。
+    static func intValue(_ raw: Any?) -> Int {
+        if let number = raw as? NSNumber { return number.intValue }
+        if let int = raw as? Int { return int }
+        if let text = raw as? String, let int = Int(text.trimmingCharacters(in: .whitespaces)) { return int }
+        return 0
     }
 
     private static func parseCategories(_ value: Any?) -> [SiteCategory] {

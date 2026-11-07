@@ -86,31 +86,48 @@ jobs:
             echo "### available iPhone devices"
             xcrun simctl list devices available
           } 2>&1 | tee build-logs/simulator-list.log
-          # 1) 优先复用 runner 上已存在的可用 iPhone 模拟器
-          EXISTING=$(xcrun simctl list devices available --json \
-            | jq -r '[.devices[][] | select(.isAvailable == true) | select(.name | startswith("iPhone"))] | first | .udid // empty')
-          if [ -n "$EXISTING" ]; then
-            UDID="$EXISTING"
-            xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
-          else
-            # 2) 退而求其次：按机型列表顺序逐个尝试创建（列表为新→旧）
+
+          # 质检 P2-8：原实现用 `[.devices[][]] | first` 取「runner 上第一个可用 iPhone」，
+          # 命中哪个机型完全取决于 runner 镜像预置了哪些设备（镜像一换就漂移），
+          # 而且可能挑到屏幕尺寸/系统版本不同的设备，让布局类断言随镜像变化。
+          # 改为固定优先级的确定性选择：按写死的机型名逐个匹配，取第一个真实存在的；
+          # 都不存在时才按同一优先级机型 + 最新 iOS runtime 创建。
+          CANDIDATES="iPhone 16 iPhone 15 iPhone 14 iPhone SE (3rd generation)"
+          UDID=""
+          for name in $CANDIDATES; do
+            UDID=$(xcrun simctl list devices available --json \
+              | jq -r --arg n "$name" \
+                '[.devices[][] | select(.isAvailable == true) | select(.name == $n)] | first | .udid // empty')
+            if [ -n "$UDID" ]; then
+              echo "Selected existing simulator: $name ($UDID)"
+              break
+            fi
+          done
+
+          if [ -z "$UDID" ]; then
             RUNTIME_ID=$(xcrun simctl list runtimes --json \
-              | jq -r '[.runtimes[] | select(.name | startswith("iOS")) | select(.isAvailable != false)]
+              | jq -r '[.runtimes[] | select(.identifier | startswith("com.apple.CoreSimulator.SimRuntime.iOS")) | select(.isAvailable != false)]
                        | sort_by(.version | split(".") | map(tonumber? // 0)) | last | .identifier')
             if [ -z "$RUNTIME_ID" ] || [ "$RUNTIME_ID" = "null" ]; then
-              echo "No iOS runtime found" >&2; exit 1
+              echo "No available iOS runtime on this runner" >&2
+              exit 1
             fi
-            UDID=""
-            for dt in $(xcrun simctl list devicetypes --json \
-                         | jq -r '.devicetypes[] | select(.name | startswith("iPhone")) | .identifier'); do
-              if UDID=$(xcrun simctl create ci-iphone "$dt" "$RUNTIME_ID" 2>/dev/null); then
+            for name in $CANDIDATES; do
+              DT=$(xcrun simctl list devicetypes --json \
+                | jq -r --arg n "$name" '[.devicetypes[] | select(.name == $n)] | first | .identifier // empty')
+              if [ -n "$DT" ] && UDID=$(xcrun simctl create "$name" "$DT" "$RUNTIME_ID" 2>/dev/null); then
+                echo "Created simulator: $name ($UDID) on $RUNTIME_ID"
                 break
               fi
+              UDID=""
             done
-            if [ -z "$UDID" ]; then
-              echo "Failed to create any simulator" >&2; exit 1
-            fi
           fi
+
+          if [ -z "$UDID" ]; then
+            echo "Failed to select or create a simulator from the pinned candidate list" >&2
+            exit 1
+          fi
+
           xcrun simctl bootstatus "$UDID" -b >/dev/null 2>&1 || true
           echo "DEST_ID=$UDID" >> "$GITHUB_ENV"
           echo "Using simulator udid=$UDID"
@@ -132,8 +149,46 @@ jobs:
           {
             echo "### Unit tests summary"
             grep -E "Test Suite '(All tests|.*Tests)' (passed|failed)" build-logs/xcodebuild-test.log | tail -30 || true
-            grep -cE "Test Case .* passed" build-logs/xcodebuild-test.log | sed 's/^/passed cases: /' || true
-            grep -cE "Test Case .* failed" build-logs/xcodebuild-test.log | sed 's/^/failed cases: /' || true
+            echo "passed cases: $(grep -cE 'Test Case .* passed' build-logs/xcodebuild-test.log || true)"
+            echo "failed cases: $(grep -cE 'Test Case .* failed' build-logs/xcodebuild-test.log || true)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 质检复验口径（报告 6.3）落到硬门禁：
+      #   单元测试总数 ≥26 且真实 passed；0 failed；xcodebuild 自报的汇总行必须存在。
+      # 只查 conclusion 会漏掉「测试根本没跑/被跳过」的情形，所以这里直接读日志文本。
+      - name: Enforce test evidence gate
+        run: |
+          set -o pipefail
+          LOG=build-logs/xcodebuild-test.log
+          [ -f "$LOG" ] || { echo "FAIL: test log missing" >&2; exit 1; }
+
+          PASSED=$(grep -cE "Test Case .* passed" "$LOG" || true)
+          FAILED=$(grep -cE "Test Case .* failed" "$LOG" || true)
+          echo "passed=$PASSED failed=$FAILED"
+
+          SUMMARY=$(grep -E "Executed \d+ tests?, with \d+ failures?" "$LOG" | tail -5 || true)
+          echo "xcodebuild executed summary:"; echo "$SUMMARY"
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "FAIL: $FAILED failing test case(s) in log" >&2
+            grep -E "Test Case .* failed" "$LOG" | head -20 >&2 || true
+            exit 1
+          fi
+          if [ "$PASSED" -lt 26 ]; then
+            echo "FAIL: passed case count $PASSED < 26（质检要求 ≥26 条真实通过）" >&2
+            exit 1
+          fi
+          # 至少要有一条 "Executed N tests" 汇总，证明测试真的执行了而不是被跳过。
+          if [ -z "$SUMMARY" ]; then
+            echo "FAIL: no 'Executed N tests, with M failures' summary line — 测试可能未真正执行" >&2
+            exit 1
+          fi
+
+          {
+            echo "### Test evidence gate: PASSED"
+            echo "- passed cases: $PASSED"
+            echo "- failed cases: $FAILED"
+            echo "- summary: $SUMMARY"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test logs
@@ -182,6 +237,39 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             2>&1 | tee build-logs/xcodebuild-device-build.log
 
+      - name: Verify Release optimization level is -O
+        run: |
+          mkdir -p build-logs
+          set -o pipefail
+          xcodebuild -showBuildSettings \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            2>/dev/null | tee build-logs/release-build-settings.log \
+            | grep -E "SWIFT_OPTIMIZATION_LEVEL|SWIFT_COMPILATION_MODE|CONFIGURATION = " || true
+
+          OPT=$(xcodebuild -showBuildSettings \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' 2>/dev/null \
+            | awk -F' = ' '/SWIFT_OPTIMIZATION_LEVEL/{print $2; exit}' | tr -d ' ')
+          echo "Release SWIFT_OPTIMIZATION_LEVEL=$OPT"
+          if [ "$OPT" != "-O" ]; then
+            echo "FAIL: Release 优化级别应为 -O，实际 '$OPT'（质检 P2-1 未修复）" >&2
+            exit 1
+          fi
+
+          # 旁证：编译日志里 app target 不应再出现 -Onone。
+          ONONE=$(grep -c -- "-Onone" build-logs/xcodebuild-device-build.log || true)
+          echo "occurrences of -Onone in device build log: $ONONE"
+          {
+            echo "### Release optimization"
+            echo "- SWIFT_OPTIMIZATION_LEVEL: **$OPT**"
+            echo "- \`-Onone\` occurrences in build log: $ONONE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Collect unsigned .app
         run: |
           set -euo pipefail
@@ -227,16 +315,65 @@ jobs:
           rm -rf Payload
           mkdir Payload
           cp -R unsigned-app/Yingshicang.app Payload/
+          APP=Payload/Yingshicang.app
           # 架构 9.7：免签口径 = 结构完整、可被工具重签、不带 embedded.mobileprovision
-          if [ -f Payload/Yingshicang.app/embedded.mobileprovision ]; then
+          if [ -f "$APP/embedded.mobileprovision" ]; then
             echo "FAIL: embedded.mobileprovision present in unsigned IPA" >&2
             exit 1
           fi
+
+          # ── 结构断言（质检复验口径，写成硬门禁而不是人工看图） ──
+          # 1. 主二进制必须是单一自包含可执行文件：Xcode 16 无签名 Release 默认会产出
+          #    `Yingshicang.debug.dylib` stub，主二进制只有几十 KB，真代码在 dylib 里；
+          #    project.yml 已置 ENABLE_DEBUG_DYLIB: NO，这里断言它真的没回来。
+          BIN="$APP/Yingshicang"
+          [ -f "$BIN" ] || { echo "FAIL: main binary missing at $BIN" >&2; exit 1; }
+          BIN_SIZE=$(stat -f%z "$BIN")
+          echo "main binary size: $BIN_SIZE bytes"
+          if [ "$BIN_SIZE" -lt 1000000 ]; then
+            echo "FAIL: 主二进制仅 $BIN_SIZE 字节，疑似 debug-dylib stub（ENABLE_DEBUG_DYLIB 未生效）" >&2
+            exit 1
+          fi
+          for stub in "$APP/Yingshicang.debug.dylib" "$APP/__preview.dylib"; do
+            if [ -e "$stub" ]; then
+              echo "FAIL: unexpected dylib stub present: $stub" >&2
+              exit 1
+            fi
+          done
+
+          # 2. 架构必须是 arm64（源码 UIRequiredDeviceCapabilities 已声明 arm64）。
+          ARCHS=$(lipo -info "$BIN" 2>&1 || true)
+          echo "lipo: $ARCHS"
+          case "$ARCHS" in
+            *arm64*) ;;
+            *) echo "FAIL: main binary is not arm64: $ARCHS" >&2; exit 1 ;;
+          esac
+          case "$ARCHS" in
+            *armv7*|*i386*|*x86_64*) echo "FAIL: unexpected slice in main binary: $ARCHS" >&2; exit 1 ;;
+          esac
+
+          # 3. Info.plist 关键值与源码声明一致。
+          PLIST="$APP/Info.plist"
+          [ -f "$PLIST" ] || { echo "FAIL: Info.plist missing" >&2; exit 1; }
+          echo "--- Info.plist assertions ---"
+          for key in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion \
+                     UIDeviceFamily UIBackgroundModes NSAppTransportSecurity; do
+            value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" 2>/dev/null || echo "<absent>")
+            echo "$key = $value"
+          done
+
+          # 4. Frameworks 目录：本工程 SPM 依赖静态链接，不应有 Frameworks。
+          #    有则打印出来（不是失败），因为「有没有」要和 IMPLEMENTATION_STATUS 的措辞对齐。
+          if [ -d "$APP/Frameworks" ]; then
+            echo "Frameworks dir present:"; ls -1 "$APP/Frameworks"
+          else
+            echo "(no Frameworks dir — SPM deps statically linked, matches IMPLEMENTATION_STATUS)"
+          fi
+
           IPA="Yingshicang-2.0.50-unsigned.ipa"
           zip -qry "$IPA" Payload
           # 结构验证：主二进制与 Info.plist 必须在 Payload/*.app 下
           unzip -l "$IPA" | grep -E "Payload/Yingshicang.app/(Yingshicang|Info.plist)$"
-          unzip -l "$IPA" | grep -E "Payload/Yingshicang.app/Frameworks/" || echo "(no embedded frameworks)"
           echo "IPA size: $(du -h "$IPA" | cut -f1)"
           shasum -a 256 "$IPA"
 

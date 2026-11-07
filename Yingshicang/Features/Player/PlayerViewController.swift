@@ -220,8 +220,11 @@ final class PlayerViewController: UIViewController {
         loading.startAnimating()
         statusLabel.isHidden = true
 
-        provider.play(flag: detail.tabs.indices.contains(activeTabForEpisodes) ? detail.tabs[activeTabForEpisodes] : "",
-                      url: episode.url) { [weak self] result in
+        // 三类源统一走 PlayResolver：lazy → 直链/二次解析/嗅探（质检 P1-1 / P1-6）。
+        PlayResolver.shared.resolve(site: provider.site,
+                                    provider: provider,
+                                    flag: currentFlag,
+                                    url: episode.url) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.loading.stopAnimating()
@@ -242,6 +245,12 @@ final class PlayerViewController: UIViewController {
         return 0
     }
 
+    /// 播放请求要带的 flag（线路名）。解析与历史两条路径共用同一取值，
+    /// 避免「解析用当前线路、历史记第一条线路」这种错配（质检 P2：:338 恒取 tabs.first）。
+    private var currentFlag: String {
+        detail.tabs.indices.contains(activeTabForEpisodes) ? detail.tabs[activeTabForEpisodes] : ""
+    }
+
     private func startEngine(urlString: String) {
         guard let url = URL(string: urlString) else {
             showStatus("播放地址无效：\(urlString)")
@@ -254,7 +263,9 @@ final class PlayerViewController: UIViewController {
         let newEngine: PlaybackEngine
         switch kind {
         case .vlc:
-            newEngine = PlaybackCapabilities.vlcAvailable ? VLCPlayerEngineStub() : VLCPlayerEngineStub()
+            // 未集成 VLCKit 时 `preferredEngine` 已回落到 .avplayer，
+            // 这里只处理「真的集成了 VLC」的分支，不留死三元（质检 P2）。
+            newEngine = VLCPlayerEngineStub()
         case .avplayer:
             newEngine = AVPlayerEngine()
         }
@@ -335,7 +346,7 @@ final class PlayerViewController: UIViewController {
         guard duration > 0 else { engine?.stop(); return }
         let finished = duration - position < 30
         let record = HistoryRecord(siteKey: detail.siteKey, vodId: detail.vodId, vodName: detail.vodName,
-                                   vodPic: detail.vodPic, flag: detail.tabs.first ?? "",
+                                   vodPic: detail.vodPic, flag: currentFlag,
                                    playIndex: currentIndex, episodeIndex: currentIndex,
                                    position: position, duration: duration, finished: finished)
         HistoryStore.shared.upsert(record: record)

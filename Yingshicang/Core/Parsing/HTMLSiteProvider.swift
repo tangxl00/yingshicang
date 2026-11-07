@@ -157,29 +157,20 @@ final class HTMLSiteProvider: SiteProvider {
 
     // MARK: - 播放解析
 
-    /// HTML 源的播放地址通常已经是直链（剧集 lists 里给的就是 m3u8/mp4），
-    /// 只有 lazy 规则存在时才需要额外处理。lazy 中的 `js:` 脚本由 JS 引擎执行
-    /// （见 JSSiteProvider.lazyScript），本类只处理「已是直链」的情形。
+    /// HTML 源在本类只做「分类」：直链直接放行，非直链标记需要嗅探。
+    ///
+    /// lazy 规则不在这里执行——三类源统一由 `PlayResolver` 在调本方法之前处理，
+    /// 避免 lazy 被执行两次（质检 P1-6 的收口点）。
     func play(flag: String, url: String, completion: @escaping (Result<PlayResolution, SiteError>) -> Void) {
-        if url.hasPrefix("m3u8://") || url.hasPrefix("mp4://") {
-            let stripped = url.replacingOccurrences(of: "m3u8://", with: "http://")
-                .replacingOccurrences(of: "mp4://", with: "http://")
-            completion(.success(PlayResolution(url: stripped, parseIndex: nil, needSniff: false)))
+        if let direct = PlayURLClassifier.directMediaURL(url) {
+            completion(.success(PlayResolution(url: direct, parseIndex: nil, needSniff: false)))
             return
         }
-        if url.lowercased().contains(".m3u8") || url.lowercased().contains(".mp4")
-            || url.lowercased().contains(".m4a") || url.lowercased().contains(".mp3") {
-            completion(.success(PlayResolution(url: url, parseIndex: nil, needSniff: false)))
+        guard !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            completion(.failure(.parse("剧集地址为空")))
             return
         }
-        // 非直链：按 lazy 规则交给 JS 引擎；没有规则则标记为需要嗅探。
-        if !site.lazy.isEmpty {
-            JSPlayParser.shared.resolve(site: site, input: url) { result in
-                completion(result)
-            }
-            return
-        }
-        completion(.success(PlayResolution(url: url, parseIndex: nil, needSniff: !url.isEmpty)))
+        completion(.success(PlayResolution(url: url, parseIndex: nil, needSniff: true)))
     }
 
     // MARK: - 内部：列表解析

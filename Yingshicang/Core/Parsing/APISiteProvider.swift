@@ -238,9 +238,16 @@ final class APISiteProvider: SiteProvider {
         }
     }
 
+    /// API 源同样只做分类：直链放行，其余交给 `PlayResolver` 的嗅探/二次解析。
     func play(flag: String, url: String, completion: @escaping (Result<PlayResolution, SiteError>) -> Void) {
-        let lower = url.lowercased()
-        let direct = lower.hasSuffix(".m3u8") || lower.hasSuffix(".mp4") || lower.hasSuffix(".mkv")
-        completion(.success(PlayResolution(url: url, parseIndex: nil, needSniff: !direct)))
+        if let direct = PlayURLClassifier.directMediaURL(url) {
+            completion(.success(PlayResolution(url: direct, parseIndex: nil, needSniff: false)))
+            return
+        }
+        guard !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            completion(.failure(.parse("剧集地址为空")))
+            return
+        }
+        completion(.success(PlayResolution(url: url, parseIndex: nil, needSniff: true)))
     }
 }

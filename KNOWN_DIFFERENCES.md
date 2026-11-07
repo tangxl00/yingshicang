@@ -39,3 +39,30 @@
 - 搜索参与条件：`searchable > 0` 且非 jar 且未被用户屏蔽；聚合线程数取 `searchThreadCount`（上限 8）
 - 直播源文本格式 `频道名$地址$备用`，取第一条线路；GB18030 / Big5 编码兜底
 - dp→pt 按 1:1 换算（160dpi 基准），全部经 `DesignTokens/Metrics` 统一驱动
+
+## 隐私声明 / ATS / 后台音频的取值口径（质检 P2-2）
+
+原则：**声明与实现必须一一对应，不做「先声明后实现」的预留；做不到的一律删声明**。三类项分别取不同结论：
+
+| 项目 | 原状态 | 处理 | 理由 |
+| --- | --- | --- | --- |
+| `NSCameraUsageDescription` | 已声明 | **删除** | 全仓 0 处 `AVCaptureDevice` / 相机相关调用，本版无扫码、无拍摄功能 |
+| `NSPhotoLibraryUsageDescription` | 已声明 | **删除** | 0 处 `PHPhotoLibrary` / `UIImagePickerController`；封面保存走网络下载到沙箱，不写相库 |
+| `NSPhotoLibraryAddUsageDescription` | 已声明 | **删除** | 同上，无相库写入路径 |
+| `NSMicrophoneUsageDescription` | 已声明 | **删除** | 0 处 `AVAudioRecorder` / `AVAudioSession` 录音类别；本版无录音、无语音搜索 |
+| `NSLocalNetworkUsageDescription` | 已声明 | **删除** | 本版无 DLNA 投屏、无局域网设备发现；WebDAV 为用户手填地址，不需要本地网络权限扫描 |
+| `NSBonjourServices`（3 项 `_http._tcp` 等） | 已声明 | **删除** | 同上，无 Bonjour 浏览实例 |
+| `UIBackgroundModes = audio` | 已声明但无实现 | **补实现**（保留声明） | 视频播放器切后台继续出声是播放器的基本行为，删声明会造成功能缺陷；已在 `AppDelegate` 的 `configureAudioSession()` 里设置 `AVAudioSession` `.playback` 类别 + `.moviePlayback` 模式并 `setActive(true)`，声明与实现对齐 |
+
+**ATS 口径**：保留 `NSAllowsArbitraryLoads = true`（采集站与直播源大量使用明文 HTTP，与 Android 原版行为一致，关掉会导致大面积站点不可用），但**删除** `NSAllowsLocalNetworking`（本版无局域网发现/投屏实现，留着等于给内网访问留口子）。明文请求的越权风险由 `JSRequestPolicy` 在 JS 桥 `req` 层逐请求兜底：禁 `file:`/`data:`/`javascript:`/`ftp:` 等危险协议、默认拒绝内网与回环地址、按站点域白名单限制跨站读取（详见「播放解析与 JS 桥安全」一节）。
+
+## 播放解析与 JS 桥安全（质检 P1-1 / P1-4 / P1-5 / P1-6）
+
+三类源（HTML / JSON API / JS 爬虫）的播放解析不再各自为政，统一收敛到 `Core/Parsing/PlayResolver.swift`：
+
+- **管线**：直链快路径 → lazy 规则（三类源一致，含 `js:` 与 `json:` 两种前缀）→ provider 分类 → `parseIndex` 二次解析（取 `parses[]` 对应解析源）→ `needSniff` 页面嗅探。
+- **失败语义**：任何一步拿不到可用地址都返回 `.failure` 并带可定位原因；**不再把入参原样当直链返回并宣告成功**（原 `JSPlayParser` 的两处 `return .success(原始地址)` 已随该文件删除）。
+- **JS 引擎隔离**：不存在全局单例 `JSEngine.shared`；`JSEngineRegistry` 按 `site:<key>` / `lazy:<key>` 各建独立 `JSContext` 与独立串行队列，8 路并发搜索不会互相覆盖 `__JS_SPIDER__`；同一站点的脚本装载状态记在引擎上（`loadOnce`），只求值一次。
+- **Promise**：`callSpider` 对带 `then` 的返回值做真实收敛——挂原生 resolve/reject block 写状态盒、推进 JSC microtask、按 `promiseTimeout` 超时，超时报 `.promiseTimeout`、拒绝报 `.promiseRejected`，二者都是失败。
+- **`req` 准入**：`JSRequestPolicy` 先判协议前缀（在归一化之前拦 `data:` 等，防止被补成 `http://data:...` 绕过），再判内网/回环，最后按站点注册域白名单判定。
+- **`local` 隔离**：存储键加 `js.local.<scope>.` 前缀，站点之间不共享键空间。

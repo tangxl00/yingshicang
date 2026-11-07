@@ -23,7 +23,9 @@ protocol SiteProvider {
 
 /// 站点级错误。jar 源在 iOS 属平台级不支持，用独立 case 显式表达，
 /// 由 UI 给出明确提示，绝不静默降级为空列表（需求「不静默降级」）。
-enum SiteError: Error, LocalizedError {
+/// `Equatable` 让测试可以对错误值做精确断言（如 `XCTAssertEqual(error, .parse("..."))`），
+/// 关联值均为 String/Int，合成实现即可，不改变运行时行为。
+enum SiteError: Error, LocalizedError, Equatable {
     case unsupportedJar(String)
     case network(Int)
     case parse(String)

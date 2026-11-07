@@ -136,10 +136,19 @@ final class Settings {
     var wallpaperPath: String { get { string("wallpaperPath") } set { set("wallpaperPath", newValue) } }
     /// 上次停留 Tab（R-01）
     var lastTabIndex: Int { get { integer("lastTabIndex") } set { set("lastTabIndex", newValue) } }
-    /// WebDAV 三项凭据（R-45）
+    /// WebDAV 三项凭据（R-45）。密码属凭证类数据，走 Keychain 而不是 UserDefaults（质检 P2）。
     var webDavURL: String { get { string("webDavURL") } set { set("webDavURL", newValue) } }
     var webDavAccount: String { get { string("webDavAccount") } set { set("webDavAccount", newValue) } }
-    var webDavPassword: String { get { string("webDavPassword") } set { set("webDavPassword", newValue) } }
+    var webDavPassword: String {
+        get { KeychainStore.get(account: "webDavPassword") }
+        set {
+            if newValue.isEmpty {
+                KeychainStore.remove(account: "webDavPassword")
+            } else {
+                KeychainStore.set(newValue, account: "webDavPassword")
+            }
+        }
+    }
     /// 阿里 token（R-48，32 位）
     var aliToken: String { get { string("aliToken") } set { set("aliToken", newValue) } }
     /// 片头/片尾跳过秒数（R-13 / F-13）
@@ -149,11 +158,13 @@ final class Settings {
     var lastLiveChannel: String { get { string("lastLiveChannel") } set { set("lastLiveChannel", newValue) } }
 
     /// 清空全部设置（R-27「重置 App」）。
+    /// Keychain 里的凭证不在 UserDefaults 里，必须单独清，否则重置后密码仍残留。
     func resetAll() {
         let dict = defaults.dictionaryRepresentation()
         for key in dict.keys where key.hasPrefix(prefix) {
             defaults.removeObject(forKey: key)
         }
+        KeychainStore.remove(account: "webDavPassword")
         registerDefaults()
     }
 }
