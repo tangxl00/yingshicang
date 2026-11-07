@@ -88,7 +88,7 @@ final class PlayerGestureController: NSObject {
 
         switch gesture.state {
         case .began:
-            activeZone = PlayerGestureMath.zone(for: location, in: host.bounds)
+            activeZone = PlayerGestureMath.zone(for: location, in: host.bounds.size)
             startBrightness = UIScreen.main.brightness
             startVolume = volumeSlider?.value ?? 0
             // MPVolumeView 的滑块在未完成布局时可能取不到，每次手势开始时重判
