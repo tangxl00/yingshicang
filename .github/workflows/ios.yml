@@ -36,9 +36,9 @@ jobs:
         run: |
           {
             echo "### U-01 gate summary"
-            if grep -q "Test Suite 'all tests' passed" build-logs/u01-swift-test.log 2>/dev/null; then
+            if grep -q "Test Suite 'All tests' passed" build-logs/u01-swift-test.log 2>/dev/null; then
               echo "**Verdict: A** — 探针全绿（含垫片对照组），维持 JavaScriptCore 原设计"
-            elif grep -q "Test Suite 'all tests' failed" build-logs/u01-swift-test.log 2>/dev/null; then
+            elif grep -q "Test Suite 'All tests' failed" build-logs/u01-swift-test.log 2>/dev/null; then
               echo "**Verdict: 见日志** — 存在失败用例，按 C-1~C-5 / 垫片组失败位置对照架构 9.3 判 A/B/C"
             else
               echo "**Verdict: 未知** — 未解析到测试套件结论，读原始日志"
@@ -63,8 +63,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install xcodegen
+        run: |
+          mkdir -p build-logs
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version 2>&1 | tee build-logs/xcodegen-version.log
+
       - name: Generate Xcode project
-        run: xcodegen generate
+        run: |
+          set -o pipefail
+          xcodegen generate 2>&1 | tee build-logs/xcodegen-generate.log
+          test -d Yingshicang.xcodeproj
 
       - name: Select or create simulator
         run: |
@@ -117,8 +128,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install xcodegen
+        run: |
+          mkdir -p build-logs
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version 2>&1 | tee build-logs/xcodegen-version.log
+
       - name: Generate Xcode project
-        run: xcodegen generate
+        run: |
+          set -o pipefail
+          xcodegen generate 2>&1 | tee build-logs/xcodegen-generate.log
+          test -d Yingshicang.xcodeproj
 
       - name: xcodebuild build (generic iOS, signing disabled)
         run: |
