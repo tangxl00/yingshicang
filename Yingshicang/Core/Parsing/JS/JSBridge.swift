@@ -211,7 +211,12 @@ final class JSEngine {
 
         // JS 线程阻塞等待；URLSession 回调在后台线程 signal。
         let semaphore = DispatchSemaphore(value: 0)
-        var response = HTTPResponse.failure(urlString)
+        // 占位值必须也是「真实语义」：同步等待超时时，如实按 NSURLErrorTimedOut 呈现，
+        // 不再借旧的默认 status=500 伪造 HTTP 状态码（历史缺陷同 build 20 的 HTTPClient）。
+        var response = HTTPResponse.transportFailure(
+            urlString,
+            error: NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut,
+                           userInfo: [NSLocalizedDescriptionKey: "同步请求等待超时（\(synchronousTimeout) 秒）"]))
         DispatchQueue.global(qos: .userInitiated).async {
             HTTPClient.shared.request(urlString, options: options) { result in
                 response = result
