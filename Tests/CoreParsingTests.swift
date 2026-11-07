@@ -162,19 +162,27 @@ final class LiveParserTests: XCTestCase {
 /// BodyDecoder 编码兜底。
 final class BodyDecoderTests: XCTestCase {
 
+    /// iOS SDK 的 String.Encoding 没有 .gb18030 成员，
+    /// 与产品层（HTTPClient.BodyDecoder）同源：经 CFString 编码表换算。
+    private static let gb18030: String.Encoding = {
+        let cfEncoding = CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)
+        let nsEncoding = CFStringConvertEncodingToNSStringEncoding(cfEncoding)
+        return String.Encoding(rawValue: nsEncoding)
+    }()
+
     func testUTF8() {
         let data = "国产剧".data(using: .utf8)!
         XCTAssertEqual(BodyDecoder.decode(data, contentType: "text/html; charset=utf-8"), "国产剧")
     }
 
     func testGB18030() {
-        let data = "国产剧".data(using: String.Encoding.gb18030)!
+        let data = "国产剧".data(using: Self.gb18030)!
         let out = BodyDecoder.decode(data, contentType: "text/html")
         XCTAssertTrue(out.contains("国产剧"), "GBK 页面应按 meta/兜底解码，实际: \(out)")
     }
 
     func testContentTypeCharsetWins() {
-        let data = "电视剧".data(using: String.Encoding.gb18030)!
+        let data = "电视剧".data(using: Self.gb18030)!
         let out = BodyDecoder.decode(data, contentType: "text/html; charset=gbk")
         XCTAssertEqual(out, "电视剧")
     }
