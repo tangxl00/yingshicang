@@ -1,0 +1,27 @@
+# Xcode 工程由 xcodegen 生成，不入库
+*.xcodeproj
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# 构建产物
+build/
+DerivedData/
+.build/
+*.ipa
+*.app
+*.dSYM.zip
+*.dSYM
+
+# 系统与编辑器
+.DS_Store
+*.swp
+.idea/
+
+# Node（仅本地分析用）
+node_modules/
+
+# 凭证绝不入库
+*.p8
+*.p12
+*.mobileprovision
+.env

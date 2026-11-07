@@ -1,0 +1,227 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SCHEME: Yingshicang
+  PROJECT: Yingshicang.xcodeproj
+
+jobs:
+  # ── U-01 前置门：cheerio.bundle.js 在 macOS JavaScriptCore 上的可证伪探针 ──
+  # 依据《iOS 技术架构方案与风险评估》第 9 章：
+  #   - U01CheerioProbeTests 放在独立 SPM 包（U01Gate），跑 macOS 不跑模拟器，几十秒出结果
+  #   - 五条断言 C-1~C-5 + 最小 Node 垫片对照组，三向分支 A/C/B 的判定数据全部落日志
+  gate-u01:
+    name: U-01 cheerio gate (macOS)
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run U01CheerioProbeTests
+        run: |
+          mkdir -p build-logs
+          set -o pipefail
+          swift test --package-path U01Gate 2>&1 | tee build-logs/u01-swift-test.log
+
+      - name: Extract U-01 verdict
+        if: always()
+        run: |
+          {
+            echo "### U-01 gate summary"
+            if grep -q "Test Suite 'all tests' passed" build-logs/u01-swift-test.log 2>/dev/null; then
+              echo "**Verdict: A** — 探针全绿（含垫片对照组），维持 JavaScriptCore 原设计"
+            elif grep -q "Test Suite 'all tests' failed" build-logs/u01-swift-test.log 2>/dev/null; then
+              echo "**Verdict: 见日志** — 存在失败用例，按 C-1~C-5 / 垫片组失败位置对照架构 9.3 判 A/B/C"
+            else
+              echo "**Verdict: 未知** — 未解析到测试套件结论，读原始日志"
+            fi
+            grep -E "Test Case .* (passed|failed)|Test Suite '(all tests|U01CheerioProbeTests)" build-logs/u01-swift-test.log || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-gate-u01
+          path: build-logs/
+          if-no-files-found: warn
+
+  # ── 主工程单测：模拟器上跑 xcodebuild test，真实输出落日志 ──
+  unit-tests:
+    name: Unit tests (simulator)
+    needs: gate-u01
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Select or create simulator
+        run: |
+          set -euo pipefail
+          RUNTIME_ID=$(xcrun simctl list runtimes --json | jq -r '.runtimes | map(select(.name | startswith("iOS"))) | .[-1].identifier')
+          if [ -z "$RUNTIME_ID" ] || [ "$RUNTIME_ID" = "null" ]; then
+            echo "No iOS runtime found" >&2; exit 1
+          fi
+          DEVTYPE=$(xcrun simctl list devicetypes --json | jq -r '.devicetypes | map(select(.name | startswith("iPhone"))) | .[-1].identifier')
+          UDID=$(xcrun simctl create ci-iphone "$DEVTYPE" "$RUNTIME_ID")
+          xcrun simctl bootstatus "$UDID" -b
+          echo "DEST_ID=$UDID" >> "$GITHUB_ENV"
+          echo "Using devicetype=$DEVTYPE runtime=$RUNTIME_ID udid=$UDID"
+
+      - name: xcodebuild test
+        run: |
+          mkdir -p build-logs
+          set -o pipefail
+          xcodebuild test \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -destination "id=$DEST_ID" \
+            -derivedDataPath build/dd \
+            2>&1 | tee build-logs/xcodebuild-test.log
+
+      - name: Test summary
+        if: always()
+        run: |
+          {
+            echo "### Unit tests summary"
+            grep -E "Test Suite '(All tests|.*Tests)' (passed|failed)" build-logs/xcodebuild-test.log | tail -30 || true
+            grep -cE "Test Case .* passed" build-logs/xcodebuild-test.log | sed 's/^/passed cases: /' || true
+            grep -cE "Test Case .* failed" build-logs/xcodebuild-test.log | sed 's/^/failed cases: /' || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-unit-tests
+          path: build-logs/
+          if-no-files-found: warn
+
+  # ── 真机架构构建（免签名）：generic/platform=iOS ──
+  build-device:
+    name: Device build (unsigned)
+    needs: unit-tests
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: xcodebuild build (generic iOS, signing disabled)
+        run: |
+          mkdir -p build-logs
+          set -o pipefail
+          xcodebuild build \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            2>&1 | tee build-logs/xcodebuild-device-build.log
+
+      - name: Collect unsigned .app
+        run: |
+          set -euo pipefail
+          APP_DIR="build/dd/Build/Products/Release-iphoneos"
+          if [ ! -d "$APP_DIR/Yingshicang.app" ]; then
+            echo "Yingshicang.app not found under $APP_DIR" >&2
+            find build/dd/Build/Products -maxdepth 2 -type d || true
+            exit 1
+          fi
+          mkdir -p unsigned-app
+          cp -R "$APP_DIR/Yingshicang.app" unsigned-app/
+          du -sh unsigned-app/Yingshicang.app
+
+      - name: Upload unsigned app
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-app
+          path: unsigned-app/
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-build-device
+          path: build-logs/
+          if-no-files-found: warn
+
+  # ── 免签 IPA：Payload 布局正确、嵌套完整、不含 embedded.mobileprovision ──
+  package-ipa:
+    name: Package unsigned IPA
+    needs: build-device
+    runs-on: macos-15
+    steps:
+      - name: Download unsigned app
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-app
+          path: unsigned-app/
+
+      - name: Wrap into Payload and verify
+        run: |
+          set -euo pipefail
+          rm -rf Payload
+          mkdir Payload
+          cp -R unsigned-app/Yingshicang.app Payload/
+          # 架构 9.7：免签口径 = 结构完整、可被工具重签、不带 embedded.mobileprovision
+          if [ -f Payload/Yingshicang.app/embedded.mobileprovision ]; then
+            echo "FAIL: embedded.mobileprovision present in unsigned IPA" >&2
+            exit 1
+          fi
+          IPA="Yingshicang-2.0.50-unsigned.ipa"
+          zip -qry "$IPA" Payload
+          # 结构验证：主二进制与 Info.plist 必须在 Payload/*.app 下
+          unzip -l "$IPA" | grep -E "Payload/Yingshicang.app/(Yingshicang|Info.plist)$"
+          unzip -l "$IPA" | grep -E "Payload/Yingshicang.app/Frameworks/" || echo "(no embedded frameworks)"
+          echo "IPA size: $(du -h "$IPA" | cut -f1)"
+          shasum -a 256 "$IPA"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-ipa
+          path: Yingshicang-2.0.50-unsigned.ipa
+          if-no-files-found: error
+
+  # ── 汇总交付：IPA + 全部 build-logs 合并为一个 release bundle ──
+  upload-artifacts:
+    name: Upload release bundle
+    needs: package-ipa
+    runs-on: macos-15
+    steps:
+      - name: Download IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-ipa
+          path: dist/
+
+      - name: Download all build logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-logs-*
+          path: dist/build-logs/
+          merge-multiple: true
+
+      - name: Upload combined bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: yingshicang-release-bundle
+          path: dist/
+          if-no-files-found: error
