@@ -7,12 +7,18 @@
 - **探针位置**：`U01Gate/Tests/U01GateTests/U01CheerioProbeTests.swift`，跑 macOS（非模拟器）
 - **五条断言**：C-1 无异常装载 / C-2 可构造 DOM / C-3 选择器（`:eq`、属性选择器）命中 / C-4 `$.html(node)` 返回字符串 / C-5 真实 `pdfh` 链式调用含 `:eq`、属性提取与 baseUrl 拼接
 - **垫片对照组**：仅注入最小 Node 垫片（`global` / `process` / `Buffer` 的类型与编码），不补任何 DOM 能力
-- **判定**（待 CI 首跑回填）：
-  - [ ] **A** — 两组全绿，维持 JavaScriptCore 原设计
+- **判定**：
+  - [x] **A** — 两组全绿，维持 JavaScriptCore 原设计
   - [ ] **C** — 原生组失败、垫片组全绿，注入最小垫片重跑
   - [ ] **B** — 两组均失败，降级为宿主 Swift 实现 `pdfh/pdfa/pd`（`Core/Parsing/` 已有备胎实现）
 
-**首跑结果**：待回填（见 Actions `gate-u01` job 与 `build-logs-gate-u01` artifact）
+**首跑结果：判定 A**（run `42318808457`，job「U-01 cheerio gate (macOS)」）
+
+- 真实 `swift test` 输出（读 build-logs / job logs，非仅看 conclusion）：`Executed 7 tests, with 0 failures`，`Test Suite 'All tests' passed`
+- 原生组 5 条断言全绿：`testC1_LoadWithoutException` / `testC2_ConstructDOM` / `testC3_SelectorHit` / `testC4_HtmlReturnsString` / `testC5_RealPdfhCall`
+- 垫片对照组 2 条全绿：`testShimmed_C1` / `testShimmed_C2ToC5`
+- **结论**：JavaScriptCore + cheerio.bundle 路线在 macOS 原生环境成立，**维持「JS 引擎 + cheerio」原设计**；不注入最小垫片、不降级到宿主 Swift 实现 `pdfh/pdfa/pd`。备胎实现（`Core/Parsing/HTML/`）保留在仓库中作为非 JS 站点解析路径，不是 U-01 的替代方案。
+- 首跑期间修掉的两处探针缺陷（均属本地可复现，已在 `node --check` 与本地 JS 验证）：① `pdfh.driver.js` 内 `/^https?:\\/\\//i` 正则转义错误导致注入 SyntaxError；② `pdfh`/`pdfa` 的 `body`/`html` 段语义应为「文档根」而非「后代选择器」，否则 C-5 取值全空。
 
 ## 平台级不支持
 

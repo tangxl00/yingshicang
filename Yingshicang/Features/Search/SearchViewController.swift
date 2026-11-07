@@ -91,7 +91,7 @@ final class SearchViewController: UIViewController, UITextFieldDelegate {
         view.addSubview(clearButton)
         view.addSubview(historyWrap)
 
-        let top = topBar ?? view
+        let top: UIView = topBar ?? view!
         NSLayoutConstraint.activate([
             historyTitle.topAnchor.constraint(equalTo: top.bottomAnchor,
                                               constant: DesignTokens.Metrics.hotSearchContainerPaddingTop),

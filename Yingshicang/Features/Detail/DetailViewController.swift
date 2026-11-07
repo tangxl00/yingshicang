@@ -98,7 +98,7 @@ final class DetailViewController: UIViewController {
         scroll.showsVerticalScrollIndicator = false
         view.addSubview(scroll)
         scroll.addSubview(contentStack)
-        let bar = topBar ?? view
+        let bar: UIView = topBar ?? view!
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: bar.bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
