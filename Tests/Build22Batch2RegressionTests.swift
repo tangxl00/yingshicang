@@ -264,8 +264,8 @@ final class Build22Batch2RegressionTests: XCTestCase {
         XCTAssertEqual(IntroTextSearcher.ranges(of: "三体", in: introText, exact: false).count, 3)
         // 中文邻接不构成词边界 → 整词命中同为 3 处
         XCTAssertEqual(IntroTextSearcher.ranges(of: "三体", in: introText, exact: true).count, 3)
-        // ASCII 词边界：matrix 在 "Matrices" 里被后续字母顶掉，只命中 "Matrix" 一处
-        let latin = "The Matrix Matrices"
+        // ASCII 词边界："matrix" 在 MatrixReloaded 里是子串命中但非整词（后跟字母 R）
+        let latin = "The Matrix MatrixReloaded"
         XCTAssertEqual(IntroTextSearcher.ranges(of: "matrix", in: latin, exact: false).count, 2)
         XCTAssertEqual(IntroTextSearcher.ranges(of: "matrix", in: latin, exact: true).count, 1)
         // 空关键词
