@@ -53,7 +53,7 @@ public enum U01Probe {
         _ = context.evaluateScript(source, withSourceURL: bundleURL)
         let after = context.objectForKeyedSubscript("__lastError")
         if let err = after, !err.isUndefined, err.toString() != before?.toString() {
-            return (context, .failed("求值抛异常: \(err.toString())"))
+            return (context, .failed("求值抛异常: \(err.toString() ?? "unknown")"))
         }
         // 装载成功的判据：globalThis.cheerio 存在且可调用 load
         let probe = context.evaluateScript(
@@ -73,7 +73,9 @@ public enum U01Probe {
             bundle.resourceURL?.appendingPathComponent("U01Gate_U01Gate.bundle/Contents/Resources/Resources/\(name)"),
             bundle.resourceURL?.appendingPathComponent(name)
         ]
-        return candidates.first { FileManager.default.fileExists(atPath: $0?.path ?? "") }
+        return candidates
+            .compactMap { $0 }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     /// 取最近一次 JS 异常文本（用于诊断信息，不作为断言依据）。

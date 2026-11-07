@@ -170,7 +170,9 @@ func U01Probe_Resource(named name: String) -> URL? {
         bundle.resourceURL?.appendingPathComponent("U01Gate_U01Gate.bundle/Contents/Resources/Resources/\(name)"),
         bundle.resourceURL?.appendingPathComponent(name)
     ]
-    return candidates.first { FileManager.default.fileExists(atPath: $0?.path ?? "") }
+    return candidates
+        .compactMap { $0 }
+        .first { FileManager.default.fileExists(atPath: $0.path) }
 }
 
 private final class BundleProbe { }
