@@ -7,14 +7,19 @@ import Foundation
 /// 快照语义与网络加载一致）。
 enum LocalConfigImporter {
 
+    /// 导入失败载体：Result 的 Failure 必须符合 Error，String 不满足，故包一层。
+    struct ImportError: Error {
+        let message: String
+    }
+
     /// 导入一段配置文本。成功时已写入 ConfigRepository（内存 + 快照）。
-    static func importConfig(text: String, sourceName: String) -> Result<ConfigBundle, String> {
+    static func importConfig(text: String, sourceName: String) -> Result<ConfigBundle, ImportError> {
         switch ConfigParser.parseResult(text: text) {
         case .success(let bundle):
             ConfigRepository.shared.store(bundle: bundle, sourceURL: sourceName)
             return .success(bundle)
         case .failure(let failure):
-            return .failure(failure.message)
+            return .failure(ImportError(message: failure.message))
         }
     }
 }
@@ -171,7 +176,7 @@ struct BackupPayload: Codable, Equatable {
 /// R-46 备份传输：WebDAV PUT / GET 备份文件。completion 在主线程。
 enum BackupTransfer {
 
-    enum TransferError: Equatable {
+    enum TransferError: Error, Equatable {
         case emptyCredentials
         case upload(String)
         case download(String)

@@ -119,16 +119,16 @@ final class Build22Batch2RegressionTests: XCTestCase {
         case .success(let bundle):
             XCTAssertEqual(bundle.sites.count, 1)
             XCTAssertEqual(bundle.sites[0].key, "h1")
-        case .failure(let message):
-            XCTFail("合法配置必须导入成功，实际失败：\(message)")
+        case .failure(let error):
+            XCTFail("合法配置必须导入成功，实际失败：\(error.message)")
         }
 
         let bad = LocalConfigImporter.importConfig(text: "{{{", sourceName: "本地导入")
         switch bad {
         case .success:
             XCTFail("坏 JSON 不得导入成功")
-        case .failure(let message):
-            XCTAssertFalse(message.isEmpty, "失败必须给出可读原因")
+        case .failure(let error):
+            XCTAssertFalse(error.message.isEmpty, "失败必须给出可读原因")
         }
     }
 

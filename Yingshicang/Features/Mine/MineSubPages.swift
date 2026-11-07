@@ -96,8 +96,8 @@ final class AddStoreDialogViewController: CardDialogViewController, UIDocumentPi
                                                    lines: [ConfigLine(name: name, url: "file://\(name)")]))
             let callback = onFinished
             dismiss(animated: true) { callback?() }
-        case .failure(let message):
-            presentError(message)
+        case .failure(let error):
+            presentError(error.message)
         }
     }
 
