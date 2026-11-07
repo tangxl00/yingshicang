@@ -23,20 +23,20 @@
 | R-08 | 按条件筛选弹窗 | 未实现 | 无全屏条件筛选弹层 |
 | R-09 | 指定搜索源弹窗 | 已实现 | `Features/Mine/MineSubPages.swift` 站点管理（`toggleSite`）；`Core/Storage/SiteBlockStore.swift` 持久化 |
 | R-10 | 播放页 | 已实现 | `Features/Player/PlayerViewController.swift` |
-| R-11 | 播放预览层 | 部分 | 有封面/播放入口；缺模糊背景 + 104:140 海报叠加与评分角标 |
-| R-12 | 播放控制层 | 部分 | 已实现进度/上一集/下一集/播放键/自动隐藏；缺左右侧滑音量亮度、锁屏态、迷你进度 |
-| R-13 | 逻辑按钮条 | 部分 | 有内核/倍速入口；缺片头片尾按钮、字幕选轨、音频轨切换的完整按钮条 |
-| R-14 | 剧情简介卡 | 部分 | 已实现简介区、收藏按钮、播放；缺「解析」「快搜」「投屏」「下载」四入口 |
+| R-11 | 播放预览层 | 已实现 | build 22：`DetailViewController` 模糊背景（海报放大铺底 + 暗色遮罩）+ 海报左下角评分角标（无评分自动隐藏） |
+| R-12 | 播放控制层 | 已实现 | build 22：`PlayerGestureController` + `PlayerGestureLogic` 左右 40% 竖滑调亮度/音量（MPVolumeView 滑块兜底实体键提示）、锁屏态（单击唤解锁钮）、2pt 迷你进度条；pan 只挂画面层不污染左滑返回 |
+| R-13 | 逻辑按钮条 | 已实现 | build 22：播放页 8 按钮条（倍速/选集/锁定/片头/片尾/音轨/字幕/解析），片头片尾读 `Settings.introSeconds/outroSeconds` 未设置时给提示 |
+| R-14 | 剧情简介卡 | 已实现 | build 22：详情页四入口——解析（三列弹窗选源起播）、快搜（进搜索页）、投屏（显式平台级不支持提示）、下载（占位提示，F-20 落地后接线） |
 | R-15 | 选集列表 | 已实现 | `PlayerViewController.tableView` 线路分组 + 集数网格 |
 | R-16 | 播放设置底部弹窗 | 已实现 | `MineSubPages` 的 `pickKernel`/`pickRate`/`pickSkip` 复用选择器 |
 | R-17 | 播放器设置页 | 已实现 | `MineSubPages` 播放器设置行组 |
-| R-18 | 解析弹窗 | 未实现 | 解析线路（`parses`）已入库，缺 3 列解析弹层 |
-| R-19 | 轨道选择 | 未实现 | 无字幕/音轨选择弹层 |
+| R-18 | 解析弹窗 | 已实现 | build 22：`PlayerSheets.ParseSheetViewController` 3 列弹层（首项「自动解析」），选中经 `PlayResolver.applySecondaryParse` 二次解析后起播；详情页「解析」入口可带指定源起播 |
+| R-19 | 轨道选择 | 已实现 | build 22：`TrackSheetViewController` 300×250 单列弹层，音轨走 `.audible`、内嵌字幕走 `.legible` 媒体选择组，字幕多一条「关闭字幕」；`MediaTrackEnumerator` 纯函数枚举默认项 |
 | R-20 | 投屏弹窗 | 平台级不支持 | DLNA 未实现（见 `KNOWN_DIFFERENCES.md`） |
 | R-21 | 历史·收藏页 | 已实现 | `Features/HistoryCollect/HistoryCollectLists.swift` |
 | R-22 | 播放历史列表 | 已实现 | 同上，搜索过滤 + 下拉刷新 + 长按删除 |
 | R-23 | 收藏列表 | 已实现 | 同上，取消收藏后移除 |
-| R-24 | 底部悬浮播放记录条 | 未实现 | 无悬浮播放条 |
+| R-24 | 底部悬浮播放记录条 | 已实现 | build 22：`Features/Player/FloatHistoryBar.swift` 50dp 悬浮条（55×55 封面 + 35dp 播放键），悬在 Tab 栏上方；`Settings.showFloatHistory` 控制、点击进详情续播 |
 | R-25 | 我的页 | 已实现 | `Features/Mine/MineViewController.swift`（`buildEntries` / `route`） |
 | R-26 | 我的页功能格 | 已实现 | 同上，8 个功能入口 |
 | R-27 | 设置总页 | 已实现 | `MineSubPages.buildRows` 分组行 |
@@ -69,7 +69,7 @@
 | R-54 | 通用提示与免责弹窗 | 未实现 | 无免责弹窗 |
 | R-55 | 空态 / 加载 / 加载更多 | 已实现 | `CategoryContentViewController.showStatus` 三态文案 |
 
-**统计**：已实现 26 项，部分实现 20 项，未实现 8 项，平台级不支持 2 项 —— 合计 56（R-01~R-55，含 R-17/R-24 等重复编号计入同一条目）。
+**统计**：已实现 35 项，部分实现 14 项，未实现 5 项，平台级不支持 2 项 —— 合计 56（R-01~R-55，含 R-17/R-24 等重复编号计入同一条目）。build 22 新增已实现：R-11 / R-12 / R-13 / R-14 / R-18 / R-19 / R-24 / F-10 / F-12。
 
 ## 二、核心功能清单（F-01 ~ F-20）
 
@@ -84,9 +84,9 @@
 | F-07 | 详情获取 | 已实现 | `Core/Parsing/DetailRule.swift` + `JSSiteProvider.parseDetail`（线路 tabs + 剧集 lists） |
 | F-08 | 播放地址解析 | 已实现 | `Core/Parsing/JS/JSPlayParser.swift`，`{parse,jx,url}` 三形态 + 嗅探标记 |
 | F-09 | 播放内核与渲染 | 部分 | `Core/Playback/PlaybackEngine.swift` 默认 AVPlayer；VLC 内核需集成 VLCKit，未集成时显式报错不静默降级 |
-| F-10 | 手势与锁屏 | 部分 | 基础单击/播放控制已实现；左右侧滑音量亮度与锁屏态未实现 |
+| F-10 | 手势与锁屏 | 已实现 | build 22：PlayerGestureController + PlayerGestureLogic——左右 40% 区域侧滑调节亮度/音量（MPVolumeView 程控 / UIScreen.brightness），中央 20% 无效；锁屏态屏蔽全部手势并保留左缘揭示解锁；迷你进度条常显可关（Settings.miniProgress） |
 | F-11 | 选集与线路切换 | 已实现 | `PlayerViewController` 线路索引 + 剧集索引 |
-| F-12 | 画质与音轨、字幕 | 部分 | 画质（quality）字段已解析入模型；音轨/字幕轨选择未实现 |
+| F-12 | 画质与音轨、字幕 | 已实现 | build 22：TrackSheetViewController（300×250）+ AVPlayerEngine 走 mediaSelectionGroups——音轨/内嵌字幕枚举、切换、关闭字幕（allowsOffOption）；画质字段维持既有解析 |
 | F-13 | 片头片尾跳过 | 已实现 | `MineSubPages.pickSkip` 持久化起止秒数 |
 | F-14 | 倍速播放 | 已实现 | `MineSubPages.pickRate` |
 | F-15 | 收藏 | 已实现 | `Core/Storage/FavoriteStore.swift` |
@@ -101,7 +101,7 @@
 | 待确认项 | 本版取值 | 依据 |
 | --- | --- | --- |
 | R-01 Tab 选中色 | 沿用 `DesignTokens` 主色 `#00C64E` | 规格未锁定色值，取已实测主色 |
-| R-12 手势区域划分 | 未实现手势，留待下一版 | Java 层加固不可读 |
+| R-12 手势区域划分 | 已实现（build 22）：左/右各 40% 为亮度/音量区、中央 20% 不触发，全高滑动生效（PlayerGestureLogic sideFraction 0.4 固化） | Java 层加固不可读 |
 | R-15 当前集高亮样式 | 选中态用主色描边 | 同上，色值不可读 |
 | R-20 投屏弹窗 | 未实现 | DLNA 未实现 |
 | R-38 删除本地视频 | 未实现 | 平台级不支持 |

@@ -39,11 +39,21 @@ final class PlayerViewController: SwipeBackViewController {
     private var isControlVisible = true
     private var hideTask: DispatchWorkItem?
 
-    init(detail: VodDetail, episodes: [PlayEpisode], startIndex: Int, provider: SiteProvider) {
+    // R-12/F-10：手势、锁屏与迷你进度的视图层控制器（判定逻辑在 PlayerGestureLogic）
+    private var gestureController: PlayerGestureController?
+    // R-18：最近一次解析结果，切换解析源时对它做二次解析
+    private var pendingResolution: PlayResolution?
+    // 当前强制使用的解析源下标；nil = 自动（沿用站点规则）
+    private var forcedParseIndex: Int?
+    private var hintTask: DispatchWorkItem?
+
+    init(detail: VodDetail, episodes: [PlayEpisode], startIndex: Int, provider: SiteProvider,
+         initialParseIndex: Int? = nil) {
         self.detail = detail
         self.episodes = episodes
         self.currentIndex = startIndex
         self.provider = provider
+        self.forcedParseIndex = initialParseIndex
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -52,7 +62,7 @@ final class PlayerViewController: SwipeBackViewController {
     override var prefersStatusBarHidden: Bool { true }
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .allButUpsideDown }
 
-    deinit { hideTask?.cancel() }
+    deinit { hideTask?.cancel(); hintTask?.cancel() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -154,13 +164,14 @@ final class PlayerViewController: SwipeBackViewController {
         seekRow.addArrangedSubview(seekSlider)
         seekRow.addArrangedSubview(durationLabel)
 
-        let actionRow = UIStackView.horizontal(spacing: DesignTokens.dp(12), alignment: .center)
+        let actionRow = UIStackView.horizontal(spacing: DesignTokens.dp(6), alignment: .center)
         speedButton.setTitle("倍速", for: .normal)
         speedButton.setTitleColor(.white, for: .normal)
         speedButton.titleLabel?.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.speedLabelFont))
         speedButton.backgroundColor = DesignTokens.Colors.dialog
         speedButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.speedLabelCorner)
-        speedButton.size(56, 28)
+        speedButton.size(0, 28)
+        speedButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
         speedButton.addTarget(self, action: #selector(showSpeedSheet), for: .touchUpInside)
 
         seriesButton.setTitle("选集", for: .normal)
@@ -168,12 +179,19 @@ final class PlayerViewController: SwipeBackViewController {
         seriesButton.titleLabel?.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.speedLabelFont))
         seriesButton.backgroundColor = DesignTokens.Colors.dialog
         seriesButton.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.speedLabelCorner)
-        seriesButton.size(56, 28)
+        seriesButton.size(0, 28)
+        seriesButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
         seriesButton.addTarget(self, action: #selector(showSeriesSheet), for: .touchUpInside)
 
         actionRow.addArrangedSubview(speedButton)
         actionRow.addArrangedSubview(seriesButton)
-        actionRow.addArrangedSubview(UIView())
+        // R-13 完整逻辑按钮条：锁定（R-12）/ 片头片尾跳过 / 音轨、字幕选轨（R-19）/ 解析（R-18）
+        actionRow.addArrangedSubview(makeCompactButton("锁定", action: #selector(lockTapped)))
+        actionRow.addArrangedSubview(makeCompactButton("片头", action: #selector(skipIntroTapped)))
+        actionRow.addArrangedSubview(makeCompactButton("片尾", action: #selector(skipOutroTapped)))
+        actionRow.addArrangedSubview(makeCompactButton("音轨", action: #selector(showAudioTrackSheet)))
+        actionRow.addArrangedSubview(makeCompactButton("字幕", action: #selector(showSubtitleTrackSheet)))
+        actionRow.addArrangedSubview(makeCompactButton("解析", action: #selector(showParseSheet)))
 
         let column = UIStackView.vertical(spacing: DesignTokens.dp(6))
         column.isLayoutMarginsRelativeArrangement = true
@@ -207,6 +225,36 @@ final class PlayerViewController: SwipeBackViewController {
         // 单击屏幕切换控制层显隐（播放器通行交互）
         let tap = UITapGestureRecognizer(target: self, action: #selector(toggleControls))
         engineHost.addGestureRecognizer(tap)
+
+        // R-12：竖滑亮度/音量、锁屏、迷你进度。判定逻辑在 PlayerGestureLogic（纯函数，单测覆盖），
+        // 这里只挂载体与副作用；HUD/锁钮/迷你进度都加在 view 上，保持在控制层之下、画面之上。
+        let interaction = PlayerInteractionState(showsMiniProgress: Settings.shared.miniProgress)
+        let controller = PlayerGestureController(interaction: interaction)
+        controller.onLockChanged = { [weak self] in
+            guard let self = self, let state = self.gestureController?.interaction else { return }
+            if state.isLocked {
+                self.isControlVisible = false
+                self.controlPanel.alpha = 0
+                self.topBar.alpha = 0
+            }
+            self.gestureController?.updateMiniProgressVisibility(controlsVisible: self.isControlVisible)
+        }
+        controller.attach(to: engineHost, hudHost: view)
+        gestureController = controller
+    }
+
+    /// R-13 按钮条的紧凑按钮（两字文案，高 28dp、圆角 12dp，与倍速/选集同款底色）。
+    private func makeCompactButton(_ title: String, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setTitle(title, for: .normal)
+        button.setTitleColor(.white, for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.speedLabelFont))
+        button.backgroundColor = DesignTokens.Colors.dialog
+        button.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.speedLabelCorner)
+        button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        button.addTarget(self, action: action, for: .touchUpInside)
+        return button
     }
 
     // MARK: - 播放
@@ -230,7 +278,13 @@ final class PlayerViewController: SwipeBackViewController {
                 self.loading.stopAnimating()
                 switch result {
                 case .success(let resolution):
-                    self.startEngine(urlString: resolution.url)
+                    self.pendingResolution = resolution
+                    // 详情页「解析」入口带初始解析源时，起播前先按该源二次解析（R-18）
+                    if let index = self.forcedParseIndex {
+                        self.reparse(with: index)
+                    } else {
+                        self.startEngine(urlString: resolution.url)
+                    }
                 case .failure(let error):
                     self.showStatus(error.localizedDescription ?? "播放地址解析失败")
                 }
@@ -314,6 +368,8 @@ final class PlayerViewController: SwipeBackViewController {
 
     private func updateProgress(position: Double, duration: Double) {
         guard duration > 0 else { return }
+        // R-12：迷你进度（控制层隐藏时替代整条进度条）
+        gestureController?.progress = position / duration
         seekSlider.maximumValue = Float(duration)
         if !seekSlider.isTracking { seekSlider.value = Float(position) }
         positionLabel.text = formatTime(position)
@@ -396,11 +452,17 @@ final class PlayerViewController: SwipeBackViewController {
     }
 
     @objc private func toggleControls() {
+        // 锁屏态：单击只唤出解锁按钮，不展示完整控制层（判定在 PlayerInteractionState）
+        if let controller = gestureController, !controller.interaction.allowsToggleControls {
+            _ = controller.revealUnlockIfLocked()
+            return
+        }
         isControlVisible.toggle()
         UIView.animate(withDuration: 0.2) {
             self.controlPanel.alpha = self.isControlVisible ? 1 : 0
             self.topBar.alpha = self.isControlVisible ? 1 : 0
         }
+        gestureController?.updateMiniProgressVisibility(controlsVisible: isControlVisible)
         if isControlVisible { scheduleHide() }
     }
 
@@ -413,9 +475,106 @@ final class PlayerViewController: SwipeBackViewController {
                 self.controlPanel.alpha = 0
                 self.topBar.alpha = 0
             }
+            self.gestureController?.updateMiniProgressVisibility(controlsVisible: false)
         }
         hideTask = task
         DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: task)
+    }
+
+    // MARK: - R-12 锁定 / R-13 跳过 / R-18 解析 / R-19 轨道
+
+    @objc private func lockTapped() { gestureController?.lock() }
+
+    @objc private func skipIntroTapped() {
+        let seconds = Settings.shared.introSeconds
+        guard seconds > 0 else {
+            showHint("未设置片头跳过秒数（我的 → 播放设置）")
+            return
+        }
+        engine?.seek(to: Double(seconds))
+    }
+
+    @objc private func skipOutroTapped() {
+        let seconds = Settings.shared.outroSeconds
+        let duration = Double(seekSlider.maximumValue)
+        guard seconds > 0, duration > Double(seconds) else {
+            showHint("未设置片尾跳过秒数（我的 → 播放设置）")
+            return
+        }
+        engine?.seek(to: duration - Double(seconds))
+    }
+
+    @objc private func showAudioTrackSheet() { presentTrackSheet(kind: .audio) }
+    @objc private func showSubtitleTrackSheet() { presentTrackSheet(kind: .subtitle) }
+
+    private func presentTrackSheet(kind: MediaTrackKind) {
+        let engine = self.engine as? AVPlayerEngine
+        let options = MediaTrackEnumerator.options(for: engine?.mediaSnapshots(kind: kind) ?? [], kind: kind)
+        guard !options.isEmpty else {
+            showHint("当前视频没有可切换的\(kind.title)")
+            return
+        }
+        let selected = engine?.selectedTrackIndex(kind: kind)
+        let sheet = TrackSheetViewController(kind: kind, options: options,
+                                             selectedIndex: MediaTrackEnumerator.highlightedIndex(in: options, selectedIndex: selected))
+        sheet.onSelect = { [weak self] index in
+            guard let self = self else { return }
+            if let index = index {
+                (self.engine as? AVPlayerEngine)?.selectTrack(kind: kind, index: index)
+            } else {
+                (self.engine as? AVPlayerEngine)?.disableTrack(kind: kind)
+            }
+        }
+        present(sheet, animated: true)
+    }
+
+    @objc private func showParseSheet() {
+        let parses = ConfigRepository.shared.currentBundle.parses
+        guard !parses.isEmpty else {
+            showHint("当前配置没有可用的解析源")
+            return
+        }
+        let sheet = ParseSheetViewController(parses: parses, currentIndex: forcedParseIndex)
+        sheet.onSelect = { [weak self] index in
+            guard let self = self else { return }
+            self.forcedParseIndex = index
+            self.reparse(with: index)
+        }
+        present(sheet, animated: true)
+    }
+
+    /// R-18：用指定解析源对当前已解析地址做二次解析；nil = 自动（直接起播）。
+    private func reparse(with index: Int?) {
+        guard let resolution = pendingResolution else {
+            showHint("尚未取得播放地址，无法切换解析源")
+            return
+        }
+        guard let index = index else {
+            startEngine(urlString: resolution.url)
+            return
+        }
+        loading.startAnimating()
+        PlayResolver.shared.applySecondaryParse(url: resolution.url, parseIndex: index) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.loading.stopAnimating()
+                switch result {
+                case .success(let reparsed):
+                    self.startEngine(urlString: reparsed.url)
+                case .failure(let error):
+                    self.showStatus(error.localizedDescription ?? "解析源切换失败")
+                }
+            }
+        }
+    }
+
+    /// 短提示：2 秒后自动消失，不长时间占用 statusLabel（错误态仍走 showStatus 长驻）。
+    private func showHint(_ text: String) {
+        showStatus(text)
+        hintTask?.cancel()
+        let task = DispatchWorkItem { [weak self] in self?.hideStatus() }
+        hintTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: task)
     }
 
     @objc private func showSpeedSheet() {

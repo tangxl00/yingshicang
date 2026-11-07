@@ -17,6 +17,12 @@ final class DetailViewController: SwipeBackViewController {
     private let backButton = UIButton(type: .system)
     private let titleLabel = UILabel.make(size: DesignTokens.Metrics.titleFont, color: .white)
     private let poster = UIImageView()
+    /// R-11 评分角标：叠在海报左下角的小黑底角标。
+    private let posterBadge = UILabel.make(size: DesignTokens.Metrics.rankBadgeFont, color: .white, weight: .semibold)
+    /// R-11 模糊背景：海报放大铺底 + 暗色模糊，营造原版预览层氛围。
+    private let backdrop = UIImageView()
+    /// R-11 背景暗色遮罩，保证前景文字可读。
+    private let backdropDim = UIView()
     private let nameLabel = UILabel.make(size: DesignTokens.Metrics.previewTitleFont, color: .white, lines: 2)
     private let scoreLabel = UILabel.make(size: DesignTokens.Metrics.previewScoreFont,
                                          color: DesignTokens.Colors.main, weight: .semibold)
@@ -95,7 +101,28 @@ final class DetailViewController: SwipeBackViewController {
     private var topBar: UIView?
 
     private func setupContent() {
+        // R-11 模糊背景：海报放大铺底 + 暗色遮罩（视觉上替代原版高斯模糊预览层）
+        backdrop.contentMode = .scaleAspectFill
+        backdrop.clipsToBounds = true
+        backdrop.setRemoteImage(item.vodPic)
+        backdropDim.backgroundColor = UIColor(white: 0, alpha: 0.72)
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        backdropDim.translatesAutoresizingMaskIntoConstraints = false
+        view.insertSubview(backdropDim, at: 0)
+        view.insertSubview(backdrop, at: 0)
+        NSLayoutConstraint.activate([
+            backdrop.topAnchor.constraint(equalTo: view.topAnchor),
+            backdrop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backdrop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            backdrop.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            backdropDim.topAnchor.constraint(equalTo: view.topAnchor),
+            backdropDim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backdropDim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            backdropDim.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+
         scroll.showsVerticalScrollIndicator = false
+        scroll.backgroundColor = .clear
         view.addSubview(scroll)
         scroll.addSubview(contentStack)
         let bar: UIView = topBar ?? view!
@@ -124,6 +151,18 @@ final class DetailViewController: SwipeBackViewController {
         poster.setRemoteImage(item.vodPic)
         poster.widthAnchor.constraint(equalToConstant: DesignTokens.Metrics.introPosterWidth).isActive = true
         poster.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.introPosterHeight).isActive = true
+
+        // R-11 评分角标：叠在海报左下角
+        posterBadge.backgroundColor = DesignTokens.Colors.black60
+        posterBadge.layer.cornerRadius = DesignTokens.dp(4)
+        posterBadge.layer.masksToBounds = true
+        posterBadge.isHidden = true
+        poster.addSubview(posterBadge)
+        posterBadge.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            posterBadge.leadingAnchor.constraint(equalTo: poster.leadingAnchor, constant: DesignTokens.dp(4)),
+            posterBadge.bottomAnchor.constraint(equalTo: poster.bottomAnchor, constant: -DesignTokens.dp(4))
+        ])
 
         let infoColumn = UIStackView.vertical(spacing: DesignTokens.dp(6))
         let nameRow = UIStackView.horizontal(spacing: DesignTokens.dp(8), alignment: .firstBaseline)
@@ -165,6 +204,18 @@ final class DetailViewController: SwipeBackViewController {
         actionRow.addArrangedSubview(favButton)
         contentStack.addArrangedSubview(actionRow)
         updateFavoriteButton()
+
+        // R-14 功能入口行：解析 / 快搜 / 投屏 / 下载
+        let entryRow = UIStackView.horizontal(spacing: DesignTokens.dp(12))
+        entryRow.isLayoutMarginsRelativeArrangement = true
+        entryRow.layoutMargins = UIEdgeInsets(top: 0, left: DesignTokens.Metrics.actionBarHorizontalPadding,
+                                             bottom: DesignTokens.dp(8), right: DesignTokens.Metrics.actionBarHorizontalPadding)
+        let parseEntry = makeEntryButton(title: "解析", icon: "arrow.triangle.2.circlepath", action: #selector(parseEntryTapped))
+        let quickSearchEntry = makeEntryButton(title: "快搜", icon: "magnifyingglass", action: #selector(quickSearchEntryTapped))
+        let castEntry = makeEntryButton(title: "投屏", icon: "tv", action: #selector(castEntryTapped))
+        let downloadEntry = makeEntryButton(title: "下载", icon: "arrow.down.circle", action: #selector(downloadEntryTapped))
+        [parseEntry, quickSearchEntry, castEntry, downloadEntry].forEach { entryRow.addArrangedSubview($0) }
+        contentStack.addArrangedSubview(entryRow)
 
         // 线路 Tab
         tabScroll.showsHorizontalScrollIndicator = false
@@ -244,6 +295,13 @@ final class DetailViewController: SwipeBackViewController {
         descLabel.text = detail.vodContent
         sourceLabel.text = "来源：" + item.siteKey
         if !detail.vodPic.isEmpty { poster.setRemoteImage(detail.vodPic) }
+        // R-11 评分角标：无评分时隐藏
+        if detail.vodScore.isEmpty {
+            posterBadge.isHidden = true
+        } else {
+            posterBadge.isHidden = false
+            posterBadge.text = "  \(detail.vodScore)  "
+        }
 
         // 类型标签（圆角 22dp，对应 introTypeCorner）
         typeWrap.subviews.forEach { $0.removeFromSuperview() }
@@ -303,6 +361,62 @@ final class DetailViewController: SwipeBackViewController {
 
     // MARK: - 交互
 
+    private func makeEntryButton(title: String, icon: String, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setTitle(title, for: .normal)
+        button.setTitleColor(.white, for: .normal)
+        button.setImage(UIImage(systemName: icon), for: .normal)
+        button.tintColor = .white
+        button.titleLabel?.font = .systemFont(ofSize: DesignTokens.sp(12))
+        button.backgroundColor = DesignTokens.Colors.dialog
+        button.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.speedLabelCorner)
+        button.heightAnchor.constraint(equalToConstant: DesignTokens.dp(30)).isActive = true
+        button.widthAnchor.constraint(equalToConstant: DesignTokens.Metrics.introEntryWidth).isActive = true
+        button.addTarget(self, action: action, for: .touchUpInside)
+        return button
+    }
+
+    /// R-14 解析入口：三列解析弹窗，选择后按指定解析源重新起播。
+    @objc private func parseEntryTapped() {
+        let parses = ConfigRepository.shared.currentBundle.parses
+        guard !parses.isEmpty else {
+            statusLabel.text = "当前配置没有可用的解析源"
+            statusLabel.isHidden = false
+            return
+        }
+        let sheet = ParseSheetViewController(parses: parses, currentIndex: nil)
+        sheet.onSelect = { [weak self] index in
+            guard let self = self, let first = self.episodes.first else { return }
+            self.openPlayer(first, index: 0, initialParseIndex: index)
+        }
+        present(sheet, animated: true)
+    }
+
+    /// R-14 快搜入口：进入搜索页。
+    @objc private func quickSearchEntryTapped() {
+        let controller = SearchViewController()
+        controller.modalPresentationStyle = .fullScreen
+        present(controller, animated: true)
+    }
+
+    /// R-14 投屏入口：显式告知 iOS 平台级不支持 DLNA。
+    @objc private func castEntryTapped() {
+        let alert = UIAlertController(title: "投屏不可用",
+                                      message: "投屏功能依赖 DLNA 协议，iOS 平台级暂不支持，详见 KNOWN_DIFFERENCES。",
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "知道了", style: .default))
+        present(alert, animated: true)
+    }
+
+    /// R-14 下载入口：F-20 下载任务管理落地前先占位提示。
+    @objc private func downloadEntryTapped() {
+        let alert = UIAlertController(title: "下载",
+                                      message: "下载任务管理将在后续版本提供。",
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "知道了", style: .default))
+        present(alert, animated: true)
+    }
+
     @objc private func playFirst() {
         guard let first = episodes.first else {
             statusLabel.text = "该影片暂无可用剧集"
@@ -312,10 +426,11 @@ final class DetailViewController: SwipeBackViewController {
         openPlayer(first, index: 0)
     }
 
-    private func openPlayer(_ episode: PlayEpisode, index: Int) {
+    private func openPlayer(_ episode: PlayEpisode, index: Int, initialParseIndex: Int? = nil) {
         guard let provider = provider, let detail = detail else { return }
         let controller = PlayerViewController(detail: detail, episodes: episodes,
-                                            startIndex: index, provider: provider)
+                                            startIndex: index, provider: provider,
+                                            initialParseIndex: initialParseIndex)
         controller.modalPresentationStyle = .fullScreen
         present(controller, animated: true)
     }

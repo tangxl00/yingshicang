@@ -144,6 +144,36 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
 
     @objc private func handleEnd() { onEnd?() }
 
+    // MARK: - R-19 轨道枚举与选择（媒体选择组：音轨 .audible / 内嵌字幕 .legible）
+    // 逻辑层在 MediaTrackModels（MediaTrackEnumerator / MediaTrackProbe），这里只做引擎侧执行。
+
+    func mediaSnapshots(kind: MediaTrackKind) -> [MediaTrackSnapshot] {
+        guard let item = player.currentItem else { return [] }
+        return MediaTrackProbe.snapshots(for: item.asset, kind: kind)
+    }
+
+    func selectedTrackIndex(kind: MediaTrackKind) -> Int? {
+        guard let item = player.currentItem else { return nil }
+        return MediaTrackProbe.selectedIndex(for: item, kind: kind)
+    }
+
+    func selectTrack(kind: MediaTrackKind, index: Int) {
+        guard let item = player.currentItem,
+              let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: Self.characteristic(for: kind)),
+              group.options.indices.contains(index) else { return }
+        item.select(group.options[index], in: group)
+    }
+
+    func disableTrack(kind: MediaTrackKind) {
+        guard let item = player.currentItem,
+              let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: Self.characteristic(for: kind)) else { return }
+        item.select(nil, in: group)
+    }
+
+    private static func characteristic(for kind: MediaTrackKind) -> AVMediaCharacteristic {
+        kind == .audio ? .audible : .legible
+    }
+
     /// PlayerLayer 需要随容器尺寸变化，容器自身不带约束体系统筹，这里手工同步。
     func layout(in bounds: CGRect) {
         playerLayer.frame = bounds

@@ -139,6 +139,14 @@ struct ParseConfig: Codable, Equatable {
         type = c.int("type") ?? 0
         ext = c.dict("ext") ?? [:]
     }
+
+    /// 成员构造器：解码路径之外的构造点（解析弹窗单测等）使用。
+    init(name: String = "", url: String = "", type: Int = 0, ext: [String: String] = [:]) {
+        self.name = name
+        self.url = url
+        self.type = type
+        self.ext = ext
+    }
 }
 
 /// 配置文件的顶层结构。
