@@ -97,7 +97,6 @@ final class InteractionViewController: SwipeBackViewController {
         tipLabel.backgroundColor = DesignTokens.Colors.cardWhite
         tipLabel.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.interactionTipCorner)
         tipLabel.layer.masksToBounds = true
-        tipLabel.heightAnchor.constraint(equalToConstant: DesignTokens.Metrics.interactionTipHeight).isActive = false
         tipLabel.text = "输入 TV 端显示的互动地址（如 192.168.1.8:9978），点击按键即发送遥控指令。"
         stack.addArrangedSubview(tipLabel)
 

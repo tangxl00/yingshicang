@@ -71,7 +71,8 @@
 	<!-- 隐私声明与实现对齐：本版新增三处能力对应的权限声明——
 	     R-44 扫码（相机）、F-18 局域网同步（Bonjour 发现 + 本地网络）。
 	     相机与局域网发现行为需真机复测；NSBonjourServices 与
-	     LANSyncServiceDescriptor.advertisedTypes 同源。 -->
+	     LANSyncServiceDescriptor.serviceType 同源（build 23 收敛：`_http._tcp` 曾声明但
+	     代码无任何浏览/注册实例，按「声明与实现一一对应」原则删除）。 -->
 	<key>NSCameraUsageDescription</key>
 	<string>用于扫描二维码以添加配置地址。</string>
 	<key>NSLocalNetworkUsageDescription</key>
@@ -79,7 +80,6 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_yingshicang._tcp</string>
-		<string>_http._tcp</string>
 	</array>
 	<key>NSDocumentsFolderUsageDescription</key>
 	<string>用于读取「文件」App 中的配置文件，并保存运行日志。</string>

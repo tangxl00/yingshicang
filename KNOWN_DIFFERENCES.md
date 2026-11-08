@@ -25,7 +25,7 @@
 | 差异 | 说明 | 用户可见行为 |
 | --- | --- | --- |
 | jar 型站点 | iOS 无 JVM，无法运行 Java 爬虫扩展 | 站点列表标注「jar·iOS 不支持」，进入站点显式提示，不静默失败 |
-| VLC 播放内核 | MobileVLCKit 无官方 SPM 分发，采用 `canImport` 编译期探测 | 未集成时选择 VLC 内核会明确报错「当前构建未集成 VLC 内核」，不静默降级 |
+| VLC 播放内核 | build 23 起以 **VLCKit 4.0 官方 SPM 包**集成（`project.yml` pin `4.0.0-a25`，binaryTarget checksum `f37c8dbd…2f1fb`）；动态 framework 嵌入 `Frameworks/VLCKit.framework`，免签 IPA 内未签名属预期，侧载重签工具会整体重签 | mkv/rmvb/flv 等容器与 DTS/AC3 音轨由 VLCKit 真实播放；`PlaybackRouter` 按容器后缀 + AVAsset 可播性路由，失败显式报错不静默降级 |
 | 本地视频导入 | iOS 沙箱限制，无法像 Android 一样扫描文件系统 | 「本地数据」页说明受限 |
 | 应用内自更新 | App Store / 企业签分发模型下无 Android 式自更新通道 | 「检查更新」页说明 iOS 无自更新通道 |
 | DLNA 投屏 / P2P | 未在本版实现 | 不展示对应入口 |
@@ -61,7 +61,7 @@ Codable 将其作为未知键静默跳过——**加载含 `lives` 的配置不�
 | --- | --- | --- | --- |
 | `NSCameraUsageDescription` | build 21 删除 | **build 22 回填** | 扫码页（R-44）落地：`ScanCodeViewController` 使用 `AVCaptureSession` 扫二维码，声明与实现对齐 |
 | `NSLocalNetworkUsageDescription` | build 21 删除 | **build 22 回填** | 局域网同步（R-43/F-18）落地：`BonjourDeviceFinder` 需本地网络权限做设备发现 |
-| `NSBonjourServices`（`_yingshicang._tcp` / `_http._tcp`） | build 21 删除 | **build 22 回填** | 与 `LANSyncServiceDescriptor.advertisedTypes` 同源，`Info.plist` 有注释互指 |
+| `NSBonjourServices`（`_yingshicang._tcp`） | build 21 删除 | **build 22 回填，build 23 收敛为仅此一项** | 与 `LANSyncServiceDescriptor.serviceType` 同源；曾一并回填的 `_http._tcp` 在代码中无任何浏览/注册实例，build 23 按「声明与实现一一对应」删除 |
 | `NSPhotoLibraryUsageDescription` | 已声明 | **删除** | 0 处 `PHPhotoLibrary` / `UIImagePickerController`；封面保存走网络下载到沙箱，不写相库 |
 | `NSPhotoLibraryAddUsageDescription` | 已声明 | **删除** | 同上，无相库写入路径 |
 | `NSMicrophoneUsageDescription` | 已声明 | **删除** | 0 处 `AVAudioRecorder` / `AVAudioSession` 录音类别；本版无录音、无语音搜索 |
@@ -88,12 +88,12 @@ build 22 批次三落地了 R-07/08/31/32/33/42/43/44/48/49/50/54、F-18/F-20、
 
 | 能力 | 模拟器已验证 | 需真机确认 |
 | --- | --- | --- |
-| 扫码（R-44） | 权限分支逻辑、无相机兜底手动输入、2s 冷却常量 | 摄像头取流、取景框布局、真实二维码识别率 |
+| 扫码（R-44） | 权限分支逻辑、无相机兜底手动输入、2s 冷却常量；build 23 起扫码结果先过 `ConfigRepository.acceptableConfigURL`（http/https + 非空 host）才进加载链路 | 摄像头取流、取景框布局、真实二维码识别率 |
 | 摇一摇（R-32） | 合成加速度序列：静止不触发 / 上升沿触发 / 冷却防连触 | CoreMotion 真实传感器阈值手感（2.2 / 1.5s 是否需要按真机调参） |
 | 局域网发现（R-43/F-18） | 端点解析、服务类型声明、`Info.plist` 权限键 | Bonjour 真实设备发现（需另一台同网设备广播 `_yingshicang._tcp.`） |
 | 局域网推送（R-49）/ TV 互动（R-42） | URL/请求体构造、地址归一化 | 对 TV 端服务的真实联通性（`/sync/push`、`/interaction` 端点由 TV 侧实现） |
-| 下载任务（F-20） | 任务模型生命周期、持久化往返、去重 | ——（本版为登记层，分片落盘下载未实现，见下） |
+| 下载任务（F-20） | 任务模型生命周期、持久化往返、去重；build 23 起直链整文件真实落盘（后台 URLSession + resume data 断点续传 + 进度节流回写）、列表显示文件大小、点击播放本地文件、删除连带清文件 | m3u8 分片合并下载仍不支持（列表里显式标失败并说明）；真实网络吞吐与后台唤醒需真机复测 |
 
-**F-20 边界说明**：本版下载任务管理是「入队 / 状态登记 / 列表管理」层（`DownloadTaskStore`，UserDefaults 持久化），不含 m3u8 分片真实落盘——iOS 前台沙箱下长时间分段下载受系统限制（后台任务约 30s–3min 即被挂起），完整下载需 `URLSession` background configuration + 后台续传会话，属于后续版本范围。当前用户可见行为：详情页「下载」把剧集登记进下载列表，列表支持状态查看 / 删除 / 清除已完成。
+**F-20 边界说明**（build 23 更新）：下载已从「登记层」升级为**真实落盘**——`DownloadService` 用 `URLSessionConfiguration.background` 建 `com.yingshicang.ios.download` 会话，直链（mp4/mkv/ts 等单文件）整文件下载到 `Documents/Downloads/`，暂停走 `cancel(byProducingResumeData:)` 保存续传数据、恢复走 `downloadTask(withResumeData:)`，进度节流写回任务状态。仍不支持的：**m3u8/HLS 分片合并离线**（需要在本地跑拼接管线，属后续版本），此类任务在列表里显式标「m3u8 分片本版不支持」而不是假装下载。
 
-**R-39 网盘边界说明**：阿里 Token 弹层（32 位 hex 校验 / 存取）与网盘状态页已落地；网盘内文件浏览与播放是 best-effort 骨架——实际可用性依赖阿里云盘开放接口（需真实 Token 与可用 API 域），沙箱与 CI 无法验证。
+**R-39 网盘边界说明**（build 23 更新）：Token 弹层、Keychain 存取、开放接口客户端（`openFile/list` 文件列表 / `openFile/getDownloadUrl` 直链转发）、H5 授权容器（`WebContainerViewController.authorizing`）与网盘文件浏览页均已落地。接口证据链：`openapi.alipan.com` 各端点 GET→405 / 伪 Bearer→401 `AccessTokenInvalid`，证明端点真实且强制鉴权；**但字段级返回结构未用真实 Token 端到端实测**（沙箱无有效凭据），真实可用性需真机配置 Token 后复测。

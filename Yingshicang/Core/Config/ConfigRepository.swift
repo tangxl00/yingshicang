@@ -50,6 +50,24 @@ final class ConfigRepository {
         cacheLock.lock(); memorySourceURL = url; cacheLock.unlock()
     }
 
+    /// 扫码 / 手填入口的地址准入（build 23 质检 P2-4）。
+    ///
+    /// 扫码拿到的字符串来自外部二维码，是最典型的不可信输入：
+    /// 必须先是 http/https 且带非空 host，才允许进入 `load`。
+    /// 拦掉 `file:` / `javascript:` / `data:` / 自定义 scheme 与 `http:///` 这类空 host，
+    /// 避免把任意协议直接灌进 `URLSession`（ATS 放开明文后这层是唯一防线）。
+    /// 返回 nil 表示不可接受，调用方应显式提示而不是静默失败。
+    static func acceptableConfigURL(from raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return nil }
+        guard let host = url.host, !host.isEmpty else { return nil }
+        _ = scheme
+        return url
+    }
+
     /// 拉取并解析配置。completion 在主线程。
     func load(urlString: String, completion: @escaping (Result<ConfigBundle, ConfigError>) -> Void) {
         guard !urlString.isEmpty else {

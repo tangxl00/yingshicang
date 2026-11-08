@@ -13,7 +13,7 @@ settings:
     ENABLE_BITCODE: NO
     CLANG_ENABLE_MODULES: YES
     MARKETING_VERSION: "2.0.50"
-    CURRENT_PROJECT_VERSION: "22"
+    CURRENT_PROJECT_VERSION: "23"
     # 产物实测 UIDeviceFamily = [1,2]（iPhone + iPad），源码声明必须与产物一致（质检 P2）。
     TARGETED_DEVICE_FAMILY: "1,2"
     SUPPORTS_MACCATALYST: NO
@@ -31,6 +31,13 @@ packages:
   SwiftSoup:
     url: https://github.com/scinfu/SwiftSoup
     from: "2.14.3"
+  # F-09 双内核：VLCKit 4.0 官方 SPM 包。包体只有一个 binaryTarget，
+  # 产物 VLCKit.xcframework 含 ios-arm64（设备）与 simulator 两个切片。
+  # pin 到 tag 4.0.0-a25：该 tag 的 Package.swift 里 binaryTarget 的 url/checksum
+  # 与 master 一致（checksum f37c8dbd…2f1fb），固定版本避免上游随时换制品。
+  VLCKit:
+    url: https://code.videolan.org/videolan/VLCKit.git
+    exactVersion: "4.0.0-a25"
 
 targets:
   Yingshicang:
@@ -72,6 +79,9 @@ targets:
         product: GRDB
       - package: SwiftSoup
         product: SwiftSoup
+      # F-09：VLCKit 是动态 framework 依赖（nested framework 嵌入 Frameworks/）。
+      - package: VLCKit
+        product: VLCKit
 
   YingshicangTests:
     type: bundle.unit-test

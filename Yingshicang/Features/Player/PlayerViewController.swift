@@ -313,13 +313,13 @@ final class PlayerViewController: SwipeBackViewController {
         engine?.stop()
         engine?.view.removeFromSuperview()
 
-        let kind = PlaybackCapabilities.preferredEngine(for: url)
+        let route = PlaybackRouter.live.decision(for: url)
+        Log.info("[Player] engine route: \(route.engine.rawValue) — \(route.reason)")
         let newEngine: PlaybackEngine
-        switch kind {
+        switch route.engine {
         case .vlc:
-            // 未集成 VLCKit 时 `preferredEngine` 已回落到 .avplayer，
-            // 这里只处理「真的集成了 VLC」的分支，不留死三元（质检 P2）。
-            newEngine = VLCPlayerEngineStub()
+            // 未集成 VLCKit 时 router 已按 vlcAvailable 回落，这里只处理真集成分支。
+            newEngine = VLCPlayerEngine()
         case .avplayer:
             newEngine = AVPlayerEngine()
         }
@@ -363,7 +363,9 @@ final class PlayerViewController: SwipeBackViewController {
             startEngine(urlString: url.absoluteString)
             return
         }
-        showStatus("播放失败：\(message)\n" + (PlaybackCapabilities.vlcAvailable ? "" : "（当前构建未集成 VLC 内核，部分容器无法播放）"))
+        showStatus("播放失败：\(message)\n" + (PlaybackCapabilities.vlcAvailable
+            ? "（已尝试 AVPlayer 与 VLCKit 两个内核，该地址可能已失效或需要防盗链 Cookie）"
+            : "（当前构建未集成 VLC 内核，部分容器无法播放）"))
     }
 
     private func updateProgress(position: Double, duration: Double) {

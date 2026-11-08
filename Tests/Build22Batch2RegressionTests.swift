@@ -46,18 +46,32 @@ final class Build22Batch2RegressionTests: XCTestCase {
         XCTAssertEqual(SearchResultSecondaryFilter.filter(mixed, selectedTokens: ["matrix"]).count, 1)
     }
 
-    /// 屏蔽源链路：屏蔽 s2 后，聚合结果经同一过滤管道只剩 s1（与长按屏蔽走同一 Store）。
-    func testBlockedSourceShrinksResults() {
+    /// 屏蔽源链路：走 SearchViewController.performSearch 同款站点过滤（searchableSites），
+    /// 验证屏蔽源、jar 爬虫、不可搜站点在搜索管道入口即被剔除——测试不自证（不内联过滤逻辑）。
+    func testBlockedSourceShrinksResults() throws {
         SiteBlockStore.shared.setBlocked("s2", blocked: true)
         defer { SiteBlockStore.shared.setBlocked("s2", blocked: false) }
-
         XCTAssertTrue(SiteBlockStore.shared.isBlocked("s2"))
-        let items = [
-            VodItem(vodId: "1", vodName: "斗罗大陆 第1季", vodPic: "", vodRemarks: "", siteKey: "s1"),
-            VodItem(vodId: "3", vodName: "斗罗大陆 剧场版", vodPic: "", vodRemarks: "", siteKey: "s2")
+
+        // 四个站点：正常 s1 / 被屏蔽 s2 / jar 爬虫 s3 / 不可搜 s4。
+        let json = #"""
+        [
+          {"key":"s1","name":"源一","api":"https://a.example.com/api","searchable":1},
+          {"key":"s2","name":"源二","api":"https://b.example.com/api","searchable":1},
+          {"key":"s3","name":"jar源","api":"https://c.example.com/spider.jar","searchable":1},
+          {"key":"s4","name":"禁搜","api":"https://d.example.com/api","searchable":0}
         ]
-        let visible = items.filter { !SiteBlockStore.shared.isBlocked($0.siteKey) }
-        XCTAssertEqual(visible.map(\.siteKey), ["s1"], "被屏蔽源的结果必须从聚合列表消失")
+        """#
+        let sites = try JSONDecoder().decode([SiteConfig].self, from: Data(json.utf8))
+        XCTAssertEqual(sites.count, 4)
+
+        let visible = SearchViewController.searchableSites(sites)
+        XCTAssertEqual(visible.map(\.key), ["s1"], "屏蔽源、jar 爬虫、禁搜站点都必须从搜索管道消失")
+
+        // 屏蔽解除后 s2 回到可搜集合（同一函数、同一 Store 的可逆性）。
+        SiteBlockStore.shared.setBlocked("s2", blocked: false)
+        XCTAssertEqual(SearchViewController.searchableSites(sites).map(\.key), ["s1", "s2"],
+                       "解除屏蔽后站点必须恢复可搜")
     }
 
     // MARK: - 2. R-06 分类筛选弹层

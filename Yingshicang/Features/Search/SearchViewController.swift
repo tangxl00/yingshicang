@@ -261,6 +261,13 @@ final class SearchViewController: SwipeBackViewController, UITextFieldDelegate {
 
     /// 聚合搜索：并行请求所有可搜索站点，按 searchThreadCount 限流。
     /// 站点失败不中断整体（单源失败只影响该源结果），全部失败才提示。
+
+    /// 搜索前站点过滤（可测纯函数）：可搜、非 jar 爬虫、未被屏蔽。
+    /// performSearch 与回归测试共用同一实现——测试不得内联重复过滤逻辑自证。
+    static func searchableSites(_ sites: [SiteConfig]) -> [SiteConfig] {
+        sites.filter { $0.canSearch && !$0.isJarSpider && !SiteBlockStore.shared.isBlocked($0.key) }
+    }
+
     private func performSearch(_ raw: String) {
         let word = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !word.isEmpty else { return }
@@ -276,8 +283,7 @@ final class SearchViewController: SwipeBackViewController, UITextFieldDelegate {
         statusLabel.isHidden = false
         statusLabel.text = "搜索中…"
 
-        let sites = ConfigRepository.shared.currentBundle.sites
-            .filter { $0.canSearch && !$0.isJarSpider && !SiteBlockStore.shared.isBlocked($0.key) }
+        let sites = SearchViewController.searchableSites(ConfigRepository.shared.currentBundle.sites)
         guard !sites.isEmpty else {
             statusLabel.text = "没有可搜索的站点\n若配置中站点均为 jar 爬虫，iOS 无法运行（无 Java 环境）"
             return

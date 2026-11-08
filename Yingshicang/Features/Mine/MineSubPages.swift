@@ -581,13 +581,18 @@ final class WebDavEditDialogViewController: CardDialogViewController {
     @objc private func testConnection() {
         resultLabel.isHidden = false
         resultLabel.text = "正在连接…"
+        // 明文 HTTP 一次性提示：不阻断（用户可能就是内网自建 WebDAV），
+        // 只让用户知道账号密码会在明文链路传输（质检 P2-3）。结果出来后再拼一次，
+        // 否则会被 outcome.displayText 覆盖掉。
+        let plaintextHint = WebDavConnectionTester.isPlaintextHTTP(urlField.text ?? "")
+            ? "（提示：明文 http 地址，账号密码将未加密传输，请确认网络环境可靠）" : ""
         testButton.isEnabled = false
         WebDavConnectionTester.testConnection(base: urlField.text ?? "",
                                               account: accountField.text ?? "",
                                               password: passwordField.text ?? "") { [weak self] outcome in
             guard let self = self else { return }
             self.testButton.isEnabled = true
-            self.resultLabel.text = outcome.displayText
+            self.resultLabel.text = outcome.displayText + plaintextHint
         }
     }
 

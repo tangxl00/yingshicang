@@ -42,10 +42,10 @@ struct LANSyncEndpoint: Equatable {
 enum LANSyncServiceDescriptor {
     /// Bonjour 服务类型（Info.plist 的 NSBonjourServices 与此处同源）。
     static let serviceType = "_yingshicang._tcp."
-    /// 通用 HTTP 服务（TV 盒子普遍只注册 _http._tcp）。
-    static let httpType = "_http._tcp."
-
-    static let advertisedTypes: [String] = [serviceType, httpType]
+    /// build 23 收敛：原声明过 `_http._tcp.` 与 `advertisedTypes`，但本工程只做
+    /// `_yingshicang._tcp.` 的浏览与广播（B 端是自建 TV 端服务），
+    /// `_http._tcp.` 无任何浏览/注册实例 → 按「声明与实现一一对应」删除，
+    /// `Info.plist` 的 `NSBonjourServices` 同步只留一项。
 }
 
 /// F-18 局域网设备发现：NetServiceBrowser 封装，发现/移除通过回调上报（主线程）。

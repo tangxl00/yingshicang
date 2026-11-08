@@ -290,6 +290,15 @@ final class HomeViewController: UIViewController {
     private func addScannedConfig(urlString: String) {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // 二维码内容不可信：只接受 http/https + 非空 host 才进加载链路（质检 P2-4）。
+        guard ConfigRepository.acceptableConfigURL(from: trimmed) != nil else {
+            let alert = UIAlertController(title: "地址不可用",
+                                          message: "仅支持 http/https 且需包含有效域名或 IP：\(trimmed)",
+                                          preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "确定", style: .default))
+            present(alert, animated: true)
+            return
+        }
         ConfigRepository.shared.load(urlString: trimmed) { result in
             DispatchQueue.main.async {
                 switch result {

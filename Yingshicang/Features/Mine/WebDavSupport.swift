@@ -67,6 +67,16 @@ enum WebDavConnectionTester {
     }
 
     /// 服务器地址归一化：去首尾空白、去全部尾部斜杠（拼接备份文件名时不会出现双斜杠）。
+    /// 明文 HTTP 判定（质检 P2-3）：WebDAV 凭据要 Basic 认证上传，明文链路会把
+    /// 用户名/密码暴露在同网段，但用户可能确实跑的是内网自建服务 → 不阻断，
+    /// 只在连接测试时给一次性提示，风险由用户自担。
+    /// 用协议前缀判断而非 host 名，`https://` 前缀的域名不算明文。
+    static func isPlaintextHTTP(_ base: String) -> Bool {
+        let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard trimmed.hasPrefix("http://") else { return false }
+        return !trimmed.hasPrefix("https://")
+    }
+
     static func normalizedBase(_ raw: String) -> String {
         var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") {

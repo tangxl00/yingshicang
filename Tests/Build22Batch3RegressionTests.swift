@@ -159,10 +159,16 @@ final class Build22Batch3RegressionTests: XCTestCase {
 
     // MARK: - 6. R-44 扫码页
 
-    func testScanCodePageContract() {
+    func testScanCodePageContract() throws {
         XCTAssertEqual(ScanCodeViewController.scanCooldown, 2.0, "扫码冷却 2 秒")
         let controller = ScanCodeViewController { _ in }
         XCTAssertNotNil(controller, "扫码页必须可实例化（相机不可用时走手动输入路径）")
+        // 相机不可用时的降级路径必须真实存在：手动输入框 + 确认按钮 + 失败提示。
+        let source = try sourceOf("Yingshicang/Features/Home/ScanCodeViewController.swift")
+        XCTAssertTrue(source.contains("manualField"), "扫码页必须有手动输入框")
+        XCTAssertTrue(source.contains("手动输入配置地址"), "手动输入框必须有占位文案")
+        XCTAssertTrue(source.contains("确认地址"), "手动输入必须有确认按钮")
+        XCTAssertTrue(source.contains("打开相机失败") || source.contains("相机"), "相机不可用必须有提示路径")
     }
 
     // MARK: - 7. R-07 榜单页
@@ -231,6 +237,17 @@ final class Build22Batch3RegressionTests: XCTestCase {
     func testInteractionPageInstantiable() {
         let controller = InteractionViewController()
         XCTAssertNotNil(controller, "TV 互动页必须可实例化（不再是占位说明页）")
+        // 实质契约：指令集 10 键齐全、地址归一化补 scheme 去尾斜杠、非法地址拒绝发送。
+        XCTAssertEqual(InteractionCommand.allCases.count, 10, "TV 遥控指令必须 10 键齐全")
+        XCTAssertEqual(InteractionMessenger.normalizeBase("192.168.1.8:9978/"), "http://192.168.1.8:9978",
+                       "无 scheme 补 http、去尾部斜杠")
+        XCTAssertEqual(InteractionMessenger.normalizeBase("  https://tv.local:8080/  "), "https://tv.local:8080",
+                       "已有 scheme 保持 https、去首尾空白与尾部斜杠")
+        XCTAssertNil(InteractionMessenger.normalizeBase("   "), "空白地址非法")
+        XCTAssertNil(InteractionMessenger.normalizeBase("not a url with spaces"), "含空格的非法地址不得补 scheme 放行")
+        XCTAssertEqual(InteractionMessenger.requestURL(for: .ok, base: "192.168.1.8:9978")?.absoluteString,
+                       "http://192.168.1.8:9978/interaction?key=ok", "指令 URL 必须按约定拼接")
+        XCTAssertNil(InteractionMessenger.requestURL(for: .ok, base: ""), "无合法地址不得发送")
     }
 
     // MARK: - 10. R-43/R-49/F-18 局域网
@@ -247,10 +264,13 @@ final class Build22Batch3RegressionTests: XCTestCase {
         XCTAssertEqual(endpoint?.pushURL?.absoluteString, "http://192.168.1.8:9978/sync/push")
     }
 
-    func testLANSyncServiceDescriptorMatchesPlist() {
+    func testLANSyncServiceDescriptorMatchesPlist() throws {
+        // build 23 收敛：只注册自有发现服务 _yingshicang._tcp（httpType/advertisedTypes 已随
+        // 「无浏览/注册实例的 _http._tcp 声明」一并删除）。断言与真实 Info.plist 一一对应。
         XCTAssertEqual(LANSyncServiceDescriptor.serviceType, "_yingshicang._tcp.")
-        XCTAssertEqual(LANSyncServiceDescriptor.httpType, "_http._tcp.")
-        XCTAssertEqual(LANSyncServiceDescriptor.advertisedTypes.count, 2)
+        let source = try sourceOf("Config/Info.plist")
+        XCTAssertTrue(source.contains("_yingshicang._tcp"), "plist 必须声明与 serviceType 同源的服务类型")
+        XCTAssertFalse(source.contains("_http._tcp"), "未实际注册的 _http._tcp 声明必须删除")
     }
 
     func testLANPushRequestConstruction() {

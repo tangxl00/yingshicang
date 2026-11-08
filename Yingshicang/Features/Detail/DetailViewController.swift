@@ -431,10 +431,19 @@ final class DetailViewController: SwipeBackViewController {
             flag = tabs.indices.contains(activeTab) ? tabs[activeTab] : (tabs.first ?? "")
         }
         let added = DownloadTaskStore.shared.add(vodItem: item, episodes: episodes, flag: flag)
+        // build 23 F-20：登记即下载——把该剧集的 pending 任务全部交给真实下载服务。
+        let vodTasks = DownloadTaskStore.shared.tasks.filter {
+            $0.vodId == item.vodId && ($0.status == .pending || $0.status == .paused)
+        }
+        let outcome = DownloadService.shared.start(tasks: vodTasks)
+        if outcome.hls > 0 {
+            statusLabel.text = "有 \(outcome.hls) 集是 m3u8 分片源，本版不支持离线下载（已在任务列表标注）"
+            statusLabel.isHidden = false
+        }
         let list = DownloadListViewController()
         present(list, animated: true) { [weak self] in
             guard let self = self else { return }
-            if added == 0 {
+            if added == 0 && outcome.hls == 0 && outcome.invalid == 0 {
                 self.statusLabel.text = "全部剧集已在下载任务中"
                 self.statusLabel.isHidden = false
             }

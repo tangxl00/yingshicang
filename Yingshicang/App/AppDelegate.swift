@@ -41,6 +41,30 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         }
     }
 
+    // MARK: - F-20 后台下载会话
+
+    /// 后台 URLSession 完成回调的暂存：系统在后台下载事件结束后唤醒 App，
+    /// 必须把 completionHandler 交给会话层，在所有事件派发完（`urlSessionDidFinishEvents`）
+    /// 时调用，否则系统会一直占着 App 的后台唤醒配额。
+    private var backgroundSessionCompletion: (() -> Void)?
+
+    func application(_ application: UIApplication,
+                     handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        guard identifier == DownloadService.backgroundIdentifier else {
+            completionHandler()
+            return
+        }
+        // 触碰 shared 让会话重建并挂上 delegate，系统才会把挂起的事件投递过来。
+        let service = DownloadService.shared
+        backgroundSessionCompletion = completionHandler
+        // 会话把挂起事件全部派发完后回调这里，及时释放系统后台唤醒配额。
+        service.onAllEventsDelivered = { [weak self] in
+            self?.backgroundSessionCompletion?()
+            self?.backgroundSessionCompletion = nil
+        }
+    }
+
     /// 播放中被电话/其他 App 抢占时，系统会中断音频；恢复前台后重新激活会话，
     /// 否则后续 `AVPlayer.play()` 会静默无声。
     func applicationDidBecomeActive(_ application: UIApplication) {

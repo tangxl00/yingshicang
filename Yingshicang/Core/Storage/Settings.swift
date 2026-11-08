@@ -146,8 +146,40 @@ final class Settings {
             }
         }
     }
-    /// 阿里 token（R-48，32 位）
-    var aliToken: String { get { string("aliToken") } set { set("aliToken", newValue) } }
+    /// 阿里 token（R-48，32 位）。与 WebDAV 密码同类——是可用来访问用户网盘的凭证，
+    /// 明文存 UserDefaults 会随沙箱备份外泄（质检 P2 安全项），因此同样走 Keychain。
+    /// 首次读取时做一次性迁移：旧版本写在 UserDefaults 明文里的值搬进 Keychain 并从
+    /// UserDefaults 删除，避免「升级后 token 丢失」与「明文残留」两种问题同时存在。
+    var aliToken: String {
+        get {
+            let migrated = KeychainStore.get(account: "aliToken")
+            if migrated.isEmpty {
+                let legacy = string("aliToken")
+                if !legacy.isEmpty {
+                    KeychainStore.set(legacy, account: "aliToken")
+                    defaults.removeObject(forKey: k("aliToken"))
+                    return legacy
+                }
+                return ""
+            }
+            // Keychain 已有值时顺手清掉可能残留的明文副本。
+            if !string("aliToken").isEmpty { defaults.removeObject(forKey: k("aliToken")) }
+            return migrated
+        }
+        set {
+            if newValue.isEmpty {
+                KeychainStore.remove(account: "aliToken")
+            } else {
+                KeychainStore.set(newValue, account: "aliToken")
+            }
+            // 无论写还是清，都不再落 UserDefaults 明文。
+            defaults.removeObject(forKey: k("aliToken"))
+        }
+    }
+    /// 阿里云盘开放平台 Client ID（R-47 网页授权用）。
+    /// 这是公开的应用标识符、不是凭证，存 UserDefaults 即可；留空表示未配置，
+    /// 网页授权入口会如实提示改走手动粘贴。
+    var aliClientID: String { get { string("aliClientID") } set { set("aliClientID", newValue) } }
     /// 片头/片尾跳过秒数（R-13 / F-13）
     var introSeconds: Int { get { integer("introSeconds") } set { set("introSeconds", newValue) } }
     var outroSeconds: Int { get { integer("outroSeconds") } set { set("outroSeconds", newValue) } }
@@ -160,6 +192,7 @@ final class Settings {
             defaults.removeObject(forKey: key)
         }
         KeychainStore.remove(account: "webDavPassword")
+        KeychainStore.remove(account: "aliToken")
         registerDefaults()
     }
 }
