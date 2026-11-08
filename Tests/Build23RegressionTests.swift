@@ -105,10 +105,16 @@ final class Build23RegressionTests: XCTestCase {
                            "UserDefaults 不应存在 aliToken 键（实际键：\(key)）")
         }
 
-        // ② 读取路径：往旧键写诱饵，getter 必须读不到（迁移逻辑只搬一次、不回头读明文）。
+        // ② 读取路径：往旧键写诱饵。Keychain 可用环境 getter 直接读 Keychain（迁移早完成）；
+        //    无 Keychain entitlement 环境（CI 未签名构建）getter 走一次性迁移、把旧明文值
+        //    原样交还一次——这是「升级不丢 Token」的设计。两种环境下都必须成立的性质是：
+        //    触碰后旧明文副本被删除，且再次读取不再回到 UserDefaults 明文。
         UserDefaults.standard.set("plaintext-decoy-token", forKey: legacyKey)
+        _ = Settings.shared.aliToken
+        XCTAssertNil(UserDefaults.standard.string(forKey: legacyKey),
+                     "getter 触碰后 UserDefaults 明文副本必须被清除")
         XCTAssertNotEqual(Settings.shared.aliToken, "plaintext-decoy-token",
-                          "getter 仍在读 UserDefaults 明文（Keychain 迁移未生效）")
+                          "明文副本清除后 getter 不得再读到 UserDefaults 明文")
         UserDefaults.standard.removeObject(forKey: legacyKey)
     }
 

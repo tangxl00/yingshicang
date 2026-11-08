@@ -133,12 +133,15 @@ enum DownloadSupport {
     }
 
     /// 文件名里的非法字符替换成 `_`（`/` 会破坏路径，`:` 在部分接口里是保留符）。
+    /// 纯空白/纯非法字符输入（清洗后不含任何有效字符）兜底为「未命名」。
     static func sanitizedName(_ raw: String) -> String {
         let banned = CharacterSet(charactersIn: "/\\:*?\"<>|")
             .union(.newlines)
         let cleaned = raw.components(separatedBy: banned).joined(separator: "_")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "未命名" : String(cleaned.prefix(80))
+        let meaningful = cleaned.replacingOccurrences(of: "_", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return meaningful.isEmpty ? "未命名" : String(cleaned.prefix(80))
     }
 
     /// 落盘文件名：`片名 - 集名.ext`。同一片同一集名重复时不覆盖——

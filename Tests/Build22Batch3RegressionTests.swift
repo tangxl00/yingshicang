@@ -270,7 +270,11 @@ final class Build22Batch3RegressionTests: XCTestCase {
         XCTAssertEqual(LANSyncServiceDescriptor.serviceType, "_yingshicang._tcp.")
         let source = try sourceOf("Config/Info.plist")
         XCTAssertTrue(source.contains("_yingshicang._tcp"), "plist 必须声明与 serviceType 同源的服务类型")
-        XCTAssertFalse(source.contains("_http._tcp"), "未实际注册的 _http._tcp 声明必须删除")
+        // 判定范围剔除 XML 注释——注释里的历史收敛说明会提到 _http._tcp，属合法文档。
+        let codeOnly = source.components(separatedBy: "<!--")
+            .map { $0.components(separatedBy: "-->").last ?? "" }
+            .joined()
+        XCTAssertFalse(codeOnly.contains("_http._tcp"), "未实际注册的 _http._tcp 声明必须删除")
     }
 
     func testLANPushRequestConstruction() {
