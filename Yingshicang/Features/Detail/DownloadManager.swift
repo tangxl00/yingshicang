@@ -278,32 +278,37 @@ final class DownloadService: NSObject, URLSessionDownloadDelegate {
         downloadTask.resume()
     }
 
-    /// 按系统任务号取回会话里的任务（URLSession 无按 identifier 直查 API，走 allTasks 过滤）。
-    private func sessionTask(with identifier: Int) -> URLSessionTask? {
-        session.allTasks.first { $0.taskIdentifier == identifier }
+    /// 按系统任务号取回会话里的任务（`allTasks` 是 async 属性，同步路径走 completion 版 getAllTasks）。
+    private func sessionTask(with identifier: Int, then: @escaping (URLSessionTask?) -> Void) {
+        session.getAllTasks { tasks in
+            then(tasks.first { $0.taskIdentifier == identifier })
+        }
     }
 
     /// 暂停并保存 resume data（下次续传）。
     func pause(taskID: String) {
-        guard let sessionTaskID = taskIDByStoreID[taskID],
-              let task = sessionTask(with: sessionTaskID) as? URLSessionDownloadTask else { return }
-        task.cancel { [weak self] resumeData in
-            guard let self = self else { return }
-            if let resumeData = resumeData {
-                self.defaults.set(resumeData, forKey: self.resumePrefix + taskID)
-                self.store.setStatus(id: taskID, status: .paused, message: "已暂停（可续传）")
-            } else {
-                // 服务端不支持 Range 时拿不到 resume data —— 只能从头下，如实告知。
-                self.store.setStatus(id: taskID, status: .paused, message: "已暂停（该源不支持续传）")
+        guard let sessionTaskID = taskIDByStoreID[taskID] else { return }
+        sessionTask(with: sessionTaskID) { [weak self] task in
+            guard let self = self, let task = task as? URLSessionDownloadTask else { return }
+            task.cancel { [weak self] resumeData in
+                guard let self = self else { return }
+                if let resumeData = resumeData {
+                    self.defaults.set(resumeData, forKey: self.resumePrefix + taskID)
+                    self.store.setStatus(id: taskID, status: .paused, message: "已暂停（可续传）")
+                } else {
+                    // 服务端不支持 Range 时拿不到 resume data —— 只能从头下，如实告知。
+                    self.store.setStatus(id: taskID, status: .paused, message: "已暂停（该源不支持续传）")
+                }
+                self.forget(taskID: taskID)
             }
-            self.forget(taskID: taskID)
         }
     }
 
     func cancel(taskID: String) {
-        if let sessionTaskID = taskIDByStoreID[taskID],
-           let task = sessionTask(with: sessionTaskID) {
-            task.cancel()
+        if let sessionTaskID = taskIDByStoreID[taskID] {
+            sessionTask(with: sessionTaskID) { task in
+                task?.cancel()
+            }
         }
         defaults.removeObject(forKey: resumePrefix + taskID)
         forget(taskID: taskID)
