@@ -188,11 +188,16 @@ final class Build22Batch3RegressionTests: XCTestCase {
         let plainController = ConditionFilterViewController(site: plain)
         XCTAssertTrue(plainController.isViewLoaded == false, "未加载视图前不触发解析")
 
-        // 有 filter 站点：复用 FilterSheetParser 解析维度（filter 值用转义 JSON 字符串构造）。
+        // 有 filter 站点：复用 FilterSheetParser 解析维度（filter 值为转义 JSON 字符串）。
         let filterJSON = #"{"class":[{"key":"class","name":"类型","value":[{"n":"全部","v":""},{"n":"电影","v":"1"}]}]}"#
+        let escapedFilter = filterJSON.replacingOccurrences(of: "\"", with: "\\\"")
         let siteText = #"{"sites":[{"key":"c2","name":"带筛选","type":0,"api":"https://c2.example.com","filter":"FILTER_PLACEHOLDER"}]}"#
-            .replacingOccurrences(of: "FILTER_PLACEHOLDER", with: filterJSON)
-        let filtered = ConfigRepository.parse(text: siteText).sites[0]
+            .replacingOccurrences(of: "FILTER_PLACEHOLDER", with: escapedFilter)
+        guard let filteredSite = ConfigRepository.parse(text: siteText).sites.first else {
+            XCTFail("filter 站点必须可解析（注入引号须转义）")
+            return
+        }
+        let filtered = filteredSite
         let dimensions = FilterSheetParser.parse(filtered.filter)
         XCTAssertEqual(dimensions.count, 1)
         XCTAssertEqual(dimensions[0].name, "类型")
@@ -388,7 +393,11 @@ final class Build22Batch3RegressionTests: XCTestCase {
         XCTAssertTrue(source.contains("NSLocalNetworkUsageDescription"), "局域网同步需要本地网络用途说明")
         XCTAssertTrue(source.contains("_yingshicang._tcp"), "Bonjour 服务类型必须与 LANSyncServiceDescriptor 同源")
         // ATS 红线：只允许 NSAllowsArbitraryLoads 一个键（历史缺陷防线）。
-        XCTAssertFalse(source.contains("NSAllowsArbitraryLoadsInWebContent"))
-        XCTAssertFalse(source.contains("NSAllowsLocalNetworking"))
+        // 判定范围剔除 XML 注释——注释里的历史缺陷说明会提到被禁键名，属合法文档，不算违规。
+        let codeOnly = source.components(separatedBy: "<!--")
+            .map { $0.components(separatedBy: "-->").last ?? "" }
+            .joined()
+        XCTAssertFalse(codeOnly.contains("NSAllowsArbitraryLoadsInWebContent"), "ATS dict 出现该键会使 NSAllowsArbitraryLoads 被平台忽略")
+        XCTAssertFalse(codeOnly.contains("NSAllowsLocalNetworking"), "ATS dict 出现该键会使 NSAllowsArbitraryLoads 被平台忽略")
     }
 }
