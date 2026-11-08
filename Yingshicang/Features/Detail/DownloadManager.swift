@@ -278,10 +278,15 @@ final class DownloadService: NSObject, URLSessionDownloadDelegate {
         downloadTask.resume()
     }
 
+    /// 按系统任务号取回会话里的任务（URLSession 无按 identifier 直查 API，走 allTasks 过滤）。
+    private func sessionTask(with identifier: Int) -> URLSessionTask? {
+        session.allTasks.first { $0.taskIdentifier == identifier }
+    }
+
     /// 暂停并保存 resume data（下次续传）。
     func pause(taskID: String) {
         guard let sessionTaskID = taskIDByStoreID[taskID],
-              let task = session.task(withIdentifier: sessionTaskID) as? URLSessionDownloadTask else { return }
+              let task = sessionTask(with: sessionTaskID) as? URLSessionDownloadTask else { return }
         task.cancel { [weak self] resumeData in
             guard let self = self else { return }
             if let resumeData = resumeData {
@@ -297,7 +302,7 @@ final class DownloadService: NSObject, URLSessionDownloadDelegate {
 
     func cancel(taskID: String) {
         if let sessionTaskID = taskIDByStoreID[taskID],
-           let task = session.task(withIdentifier: sessionTaskID) {
+           let task = sessionTask(with: sessionTaskID) {
             task.cancel()
         }
         defaults.removeObject(forKey: resumePrefix + taskID)

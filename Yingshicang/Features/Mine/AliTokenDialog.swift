@@ -272,9 +272,6 @@ final class NetdiskViewController: SwipeBackViewController,
             config.secondaryText = DownloadService.sizeText(size)
             config.secondaryTextProperties.color = DesignTokens.Colors.gray
         }
-        if file.isFolder {
-            config.accessories = [.disclosureIndicator()]
-        }
         cell.contentConfiguration = config
         cell.backgroundColor = .clear
         return cell

@@ -110,7 +110,7 @@ final class AliDriveClient {
         http.request(url, options: options) { response in
             let result: Result<T, AliDriveError> = {
                 if let failure = response.transport {
-                    return .failure(.badStatus(0, failure.localizedDescription))
+                    return .failure(.badStatus(0, failure.displayText))
                 }
                 guard response.status == 200, !response.content.isEmpty else {
                     return .failure(.badStatus(response.status, String(response.content.prefix(200))))
