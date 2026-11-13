@@ -128,3 +128,18 @@ build 23 相比 build 22 的五个「部分」全部转「已实现」：R-39 �
 - 免签 IPA：`Payload/Yingshicang.app` 布局，主二进制自包含，不含 `embedded.mobileprovision`；`CODE_SIGNING_ALLOWED=NO` 只影响签名不影响编译
   - **关于 Frameworks 目录**：本工程未启用 `ENABLE_DEBUG_DYLIB`（`project.yml` 的 `ENABLE_DEBUG_DYLIB: NO`），GRDB / SwiftSoup 两个 SPM 依赖以**静态库**形式链接进主二进制。**build 23 起有变化**：VLCKit 4.0 官方以 `.binaryTarget` 分发，设备 slice（`ios-arm64/VLCKit.framework`）是动态框架，因此 `Payload/Yingshicang.app/Frameworks/` 下**会**出现 `VLCKit.framework`（外加 SwiftPM 自动收集的依赖框架）。这是免签 IPA 的预期形态：`CODE_SIGNING_ALLOWED=NO` 下该框架不签名，与本工程其余二进制一致；用 Sideloadly / AltStore 等重签工具安装时，工具会对整个 payload（含嵌套框架）重新签名。验收判据：主二进制单一自包含可执行文件（无 `*.debug.dylib` / `__preview.dylib` 伴生）、嵌套框架结构完整（`VLCKit.framework/VLCKit` 存在且 arm64）、Info.plist 合法、无 provisioning profile。
 - 验收口径：`conclusion=success` 不等于测试通过，须读 `build-logs` 中 `xcodebuild test` 真实输出
+
+
+
+## build 25：配置源格式兼容层（增量）
+
+范围：只动配置加载/解析层，站点解析、播放、UI 均不变。格式取舍依据 `Docs/CONFIG_FORMATS.md`（19 行证据矩阵，每行含证据来源与真实样例 URL）。
+
+- **新增文件** `Yingshicang/Core/Config/ConfigPayloadSupport.swift`：
+  - `ConfigShape`（plain / base64Preamble / aes2423）+ `ConfigTransportDecoder`（字节归一 → 字节层 `[A-Za-z0-9]{8}**` 标记 → base64 解码 → `2423` AES-CBC/PKCS7 解密，CommonCrypto）；
+  - `JSON5Lite`（单引号→双引号、裸键加引号、去尾逗号；反引号模板串明确拒绝并给原因）。
+- **改造** `ConfigParser.swift`：新增 `.undecodable(shape:detail:)` 失败分支与 `parseResult(data:text:)` 字节层入口；`parseStoreIndex` 同走字节层；build 24 的 `stripJSONNoise` / `analyze` / `stripBlockComments` 逻辑保留。
+- **随冒烟修复的存量 bug（CRLF 行注释失效）**：`stripJSONNoise` 原先直接 `components(separatedBy: "\n")`，而 CRLF 在 Swift 里是单一字素（Character），切分时整份文件被当成一行、第 2 行起的 `//` 注释全部失效 —— 真实样本饭太硬 base64 配置解出后正是 CRLF 行尾 + 行注释，修复前 49 sites 一个都解不出。现先在字素层把 `\r\n` / 孤立 `\r` 归一为 `\n` 再剥注释（本地全链路实测：LF 版 234 sites 不变、CRLF 版同样 234 sites）。
+- **随冒烟加固**：`looksLikeJSObject` 判据加入反引号 —— 只有模板字符串（无单引号）的输入也能进入 JS 字面量分支、如实报「含模板字符串」，而不是落到无关的 JSON 语法错误。
+- **测试** `Tests/Build25ConfigFormatRegressionTests.swift` 13 条用例（与另一条 build25 工作线的 `Build25RegressionTests.swift` 并存，类名不冲突）；fixture 为 4 份真实样本原样落盘 `Tests/Fixtures/`（folder reference 进测试 bundle，`project.yml` 已声明）。全部断言已在本地 Linux 全链路（Swift 6.1.2 + libcrypto AES）逐条预验证后推 CI。
+- **版本**：`CURRENT_PROJECT_VERSION` 24 → 25。

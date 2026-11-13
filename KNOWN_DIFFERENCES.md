@@ -97,3 +97,23 @@ build 22 批次三落地了 R-07/08/31/32/33/42/43/44/48/49/50/54、F-18/F-20、
 **F-20 边界说明**（build 23 更新）：下载已从「登记层」升级为**真实落盘**——`DownloadService` 用 `URLSessionConfiguration.background` 建 `com.yingshicang.ios.download` 会话，直链（mp4/mkv/ts 等单文件）整文件下载到 `Documents/Downloads/`，暂停走 `cancel(byProducingResumeData:)` 保存续传数据、恢复走 `downloadTask(withResumeData:)`，进度节流写回任务状态。仍不支持的：**m3u8/HLS 分片合并离线**（需要在本地跑拼接管线，属后续版本），此类任务在列表里显式标「m3u8 分片本版不支持」而不是假装下载。
 
 **R-39 网盘边界说明**（build 23 更新）：Token 弹层、Keychain 存取、开放接口客户端（`openFile/list` 文件列表 / `openFile/getDownloadUrl` 直链转发）、H5 授权容器（`WebContainerViewController.authorizing`）与网盘文件浏览页均已落地。接口证据链：`openapi.alipan.com` 各端点 GET→405 / 伪 Bearer→401 `AccessTokenInvalid`，证明端点真实且强制鉴权；**但字段级返回结构未用真实 Token 端到端实测**（沙箱无有效凭据），真实可用性需真机配置 Token 后复测。
+
+
+
+## build 25：配置源格式兼容矩阵结论（`Docs/CONFIG_FORMATS.md`）
+
+证据驱动的新格式适配结论（全部基于实际抓取样本，无一条来自推理）：
+
+| 格式 | 结论 | 真实样例 |
+| --- | --- | --- |
+| base64 包装（二进制前导 + `XXXXXXXX**` + base64） | **已支持**（`ConfigTransportDecoder` 字节层识别） | `http://www.饭太硬.cc/tv`（JPEG 前导 2,401 B + `HnPSxaeH**`） |
+| AES `2423` 配置（密钥内嵌明文头部） | **已支持**（AES-128-CBC/PKCS7，CommonCrypto） | `https://www.wya6.cn/tv/yc.json`（30,444 B 十六进制） |
+| JS 对象字面量 / 类 JSON5（裸键 + 单引号） | **已支持**（`JSON5Lite` 归一为标准 JSON） | `https://raw.githubusercontent.com/gsdlj/TVBox/main/4.txt` |
+| 口令型加密配置 | **不支持（未发现真实样本）**：APK 字符串表 `密码/口令/密钥/加密/2423` 全部 0 命中，FongMi `Decoder#cbc` 密钥来自明文头部，无口令交互证据，不做口令弹窗 | — |
+| 多仓索引 `lines[]` 嵌套 / `storeHouse` | **未发现真实样本**（采样 34 份 0 命中）；既有解析代码保留但不宣称新增支持 | — |
+| 配置级 gzip | **不支持（未发现真实样本）**：传输层压缩由 URLSession 透明解压 | — |
+| 纯文本直播列表（`频道,#genre#`） | 维持移除（`lives` 不建模） | `qist/tvbox/master/ITV.txt` |
+
+- **安全基线**：AES 密钥只在内存参与 `CCCrypt`，不写日志、不进错误文案；错误提示只报结构性原因（「缺少 `$#…#$` 密钥段」「密文长度不是 16 的整数倍」），由 `Build25ConfigFormatRegressionTests.testAESFailureMessageNeverLeaksKey` 固化。
+- **关键实现口径**：base64 的 `**` 标记必须在**字节层**检索——二进制前导使严格 UTF-8 解码失败后，GB18030 回落会按双字节消耗前导高位字节、吞掉紧随的 ASCII 标记（实测字符串层找不到 `**`），由 `testBase64MarkerDisappearsIfDecodedFirst` 固化。
+- build 24 的 15 条回归口径（行注释/块注释/尾逗号/BOM/GBK/错误提示行号片段）全部保留，未推翻既有 `stripJSONNoise` / `analyze` 结构。

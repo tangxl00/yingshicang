@@ -88,6 +88,13 @@ targets:
     platform: iOS
     sources:
       - path: Tests
+        excludes:
+          # fixture 是真实配置样本（含二进制体），按 folder reference 原样拷进测试 bundle，
+          # 不作为源码参与编译；Build25ConfigFormatRegressionTests 用 subdirectory: "Fixtures" 读取。
+          - "Fixtures/**"
+      - path: Tests/Fixtures
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yingshicang.ios.tests

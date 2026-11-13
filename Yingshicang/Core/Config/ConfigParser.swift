@@ -13,6 +13,10 @@ enum ConfigParser {
         case sitesUndecodable(String)
         /// 既不是合法 JSON，也不是可容错的 JSON。附带首个非法位置的行号与内容片段。
         case invalidJSON(JSONSyntaxError)
+        /// 识别到了包装形态（base64 / AES / JS 字面量），但还原失败。附带形态名与真实原因。
+        /// build 25 新增：告诉用户「这份配置是什么形态、为什么还原不了」，
+        /// 而不是笼统一句「不是合法 JSON」。
+        case undecodable(shape: String, detail: String)
 
         var message: String {
             switch self {
@@ -20,16 +24,49 @@ enum ConfigParser {
             case .wrongShape(let detail): return "配置顶层结构不符：\(detail)"
             case .sitesUndecodable(let detail): return "站点字段无法解码：\(detail)"
             case .invalidJSON(let syntax): return "不是合法 JSON：\(syntax.display)"
+            case .undecodable(let shape, let detail): return "这份配置是\(shape)，但无法还原：\(detail)"
             }
         }
     }
 
     /// 可诊断的解析入口。`load` 用它，把真实原因透出到界面。
     ///
+    /// 分层（build 25）：字节流归一 → 编码判定 → 形态识别 → 解码器 → JSON 校验/剥注释。
+    /// - 字节流归一 / 编码判定 / 形态识别在 `ConfigTransportDecoder`；
+    /// - 识别失败（AES 密文损坏等）走 `.undecodable`，仍给真实原因；
+    /// - 识别成功（plain）后进 `parseText`，与 build 24 完全同一套校验与剥注释逻辑。
+    ///
     /// 顺序：能解码且**解出了内容** → 成功；否则做结构诊断，给出真实原因。
     /// 关键点：`ConfigBundle` 是宽容解码，任何 JSON 对象都能"解码成功"成空 bundle，
     /// 所以不能只看「解码有没有抛错」，必须再看「解出来的东西是不是真的配置」。
     static func parseResult(text: String) -> Result<ConfigBundle, Failure> {
+        let decoded = ConfigTransportDecoder.decode(data: Data(text.utf8), contentType: "application/json")
+        return parseDecoded(decoded)
+    }
+
+    /// 字节层入口：从 `HTTPResponse.data` 直接进来，保留原始字节（BOM / 二进制前导 / 加密体都在）。
+    /// `content` 是 `BodyDecoder` 已解码的文本，只在重建字节失败时兜底。
+    static func parseResult(data: Data?, text: String) -> Result<ConfigBundle, Failure> {
+        guard let data = data, !data.isEmpty else { return parseResult(text: text) }
+        let decoded = decodePayload(data: data)
+        return parseDecoded(decoded)
+    }
+
+    /// 与 `load` 一致的内容类型口径：配置源基本是 application/json，
+    /// 少数服务器给 text/plain；`BodyDecoder` 的 HTML 判定靠正文特征兜住。
+    static func decodePayload(data: Data) -> ConfigTransportDecoder.Output {
+        ConfigTransportDecoder.decode(data: data, contentType: "application/json")
+    }
+
+    private static func parseDecoded(_ decoded: ConfigTransportDecoder.Output) -> Result<ConfigBundle, Failure> {
+        if let warning = decoded.warning {
+            return .failure(.undecodable(shape: decoded.shape.displayName, detail: warning))
+        }
+        return parseText(decoded.text)
+    }
+
+    /// 文本层解析（build 24 逻辑原样保留，并追加 JS/JSON5 字面量归一）。
+    static func parseText(_ text: String) -> Result<ConfigBundle, Failure> {
         let normalized = normalize(text)
         guard !normalized.isEmpty else { return .failure(.emptyText) }
 
@@ -45,7 +82,57 @@ enum ConfigParser {
             if let failure = analyze(cleaned) { return .failure(failure) }
             return .success(bundle)
         }
+
+        // build 25：JS 对象字面量 / 类 JSON5（未加引号键、单引号串、尾逗号）。
+        // 真实样本 https://raw.githubusercontent.com/gsdlj/TVBox/main/4.txt。
+        // 放在 strict 失败之后，避免对标准 JSON 做无谓改写。
+        if looksLikeJSObject(cleaned) {
+            switch JSON5Lite.toJSON(cleaned) {
+            case .failure(let unsupported):
+                return .failure(.undecodable(shape: "JS 对象字面量配置", detail: unsupported.rawValue))
+            case .success(let converted):
+                let jsText = stripJSONNoise(converted)
+                if let bundle = decode(jsText) {
+                    if !bundle.sites.isEmpty || !bundle.parses.isEmpty { return .success(bundle) }
+                    if let failure = analyze(jsText) {
+                        return .failure(.undecodable(shape: "JS 对象字面量配置",
+                                                     detail: "字面量已归一为标准 JSON，但\(failure.message)"))
+                    }
+                    return .success(bundle)
+                }
+                return .failure(.undecodable(shape: "JS 对象字面量配置",
+                                             detail: "归一为标准 JSON 后仍无法解码"))
+            }
+        }
         return .failure(analyze(cleaned) ?? .invalidJSON(JSONSyntaxError.line("无法解析为 JSON", 0, "")))
+    }
+
+    /// Lightweight heuristic: after `{` at the top level (outside strings), a bare identifier followed by `:` appears, or a single-quoted string / backtick appears.
+    /// The backtick is included because templates are also JS expressions — when only a backtick is present, we also need to enter this branch to report `template string` truthfully,
+    /// rather than falling through into an irrelevant JSON syntax error. It only determines "whether it's worth attempting"; the actual conversion is handled by `JSON5Lite`.
+    private static func looksLikeJSObject(_ text: String) -> Bool {
+        let scalars = Array(text.unicodeScalars)
+        var index = 0
+        var inString = false
+        var escaped = false
+        while index < scalars.count {
+            let scalar = scalars[index]
+            if inString {
+                if escaped { escaped = false }
+                else if scalar == "\\" { escaped = true }
+                else if scalar == "\"" { inString = false }
+                index += 1
+                continue
+            }
+            if scalar == "\"" {
+                inString = true
+                index += 1
+                continue
+            }
+            if scalar == "'" || scalar == "`" { return true }
+            index += 1
+        }
+        return false
     }
 
     /// 兼容旧签名：解析不出内容时返回空 bundle（仅测试与非关键路径使用）。
@@ -93,14 +180,35 @@ enum ConfigParser {
     }
 
     /// 解析多仓索引文件（R-29 的仓列表来源）。
-    /// 兼容两种形态：
+    /// 兼容形态（均有真实样本，见 `Docs/CONFIG_FORMATS.md`）：
     ///   [ { "name": "...", "url": "...", "lines": [ ... ] } ]
-    ///   { "urls": [ { "url": "...", "name": "..." } ] }   （TVBox 多仓入口）
+    ///   { "urls": [ { "url": "...", "name": "..." } ] }   （主流：ztha.top/TVBox/GYCK.json 等）
+    ///   { "urls": [ "https://…", "https://…" ] }          （纯字符串数组）
+    ///   { "stores": [ … ] }                                （FongMi 历史写法）
     static func parseStoreIndex(text: String) -> [ConfigStore] {
-        let trimmed = stripJSONNoise(normalize(text))
-        guard let data = trimmed.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        let payload = ConfigTransportDecoder.decode(data: Data(text.utf8), contentType: "application/json")
+        return parseStoreIndexPayload(payload.text)
+    }
 
+    static func parseStoreIndexPayload(_ text: String) -> [ConfigStore] {
+        let normalized = normalize(text)
+        if let object = jsonObject(stripJSONNoise(normalized)) {
+            return storeIndex(from: object)
+        }
+        // build 25：多仓索引也有用 JS 字面量写的（未加引号键 / 单引号串）。
+        if looksLikeJSObject(normalized), case .success(let converted) = JSON5Lite.toJSON(normalized),
+           let object = jsonObject(stripJSONNoise(converted)) {
+            return storeIndex(from: object)
+        }
+        return []
+    }
+
+    private static func jsonObject(_ text: String) -> Any? {
+        guard let data = text.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+    }
+
+    private static func storeIndex(from object: Any) -> [ConfigStore] {
         if let list = object as? [[String: Any]] {
             return list.compactMap { storeFromDictionary($0) }
         }
@@ -156,7 +264,13 @@ enum ConfigParser {
     /// 不能用 `Character`（字素簇）——`"` + 变体选择符会被合成为一个 Character，
     /// `ch == "\""` 判等随之失效。
     static func stripJSONNoise(_ text: String) -> String {
-        let withoutBOM = normalize(text)
+        // CRLF 在 Swift 里是单一字素（一个 Character），`components(separatedBy: "\n")` 切不开它，
+        // 整份文件会被当成一行、第 2 行起的 `//` 行注释全部失效（真实样本：饭太硬 base64
+        // 配置解出后是 CRLF 行尾 + 行注释，正是靠这步归一才剥得掉注释）。
+        // 先在字素层把 `\r\n` 与孤立 `\r` 统一成 `\n`，再按行剥注释。
+        let unified = text.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let withoutBOM = normalize(unified)
         var lines: [String] = []
         lines.reserveCapacity(64)
         for line in withoutBOM.components(separatedBy: "\n") {
