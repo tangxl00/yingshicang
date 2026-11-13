@@ -64,7 +64,8 @@ final class MainTabBarController: UITabBarController {
 
     private func handleShakeRecommendation() {
         guard !isPresentingShakeRecommendation else { return }
-        guard let site = ConfigRepository.shared.currentBundle.sites.first(where: { !$0.isJarSpider }) else { return }
+        // 跳过 jar 类站点（iOS 无 Java 运行时），否则摇一摇会永远等不到结果。
+        guard let site = ConfigRepository.shared.currentBundle.sites.first(where: { $0.isPlatformSupported }) else { return }
         let provider = SiteProviderFactory.make(site: site)
         provider.home { [weak self] result in
             DispatchQueue.main.async {

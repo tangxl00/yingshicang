@@ -152,23 +152,23 @@ final class ConditionFilterViewController: SwipeBackViewController {
         activity.startAnimating()
         statusLabel.text = " "
         let provider = SiteProviderFactory.make(site: site)
-        provider.category(id: "", page: 1, extend: extend) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.activity.stopAnimating()
-                switch result {
-                case .success(let list):
-                    if let picked = ShakeRecommendationPicker.pick(list) {
-                        let controller = DetailViewController(item: picked)
-                        controller.modalPresentationStyle = .fullScreen
-                        self.present(controller, animated: true)
-                    } else {
-                        self.statusLabel.text = "该条件下没有可推荐的影片"
-                    }
-                case .failure(let error):
-                    self.statusLabel.text = error.localizedDescription
+        SiteLoad.run { [weak self] result in
+            guard let self = self else { return }
+            self.activity.stopAnimating()
+            switch result {
+            case .success(let list):
+                if let picked = ShakeRecommendationPicker.pick(list) {
+                    let controller = DetailViewController(item: picked)
+                    controller.modalPresentationStyle = .fullScreen
+                    self.present(controller, animated: true)
+                } else {
+                    self.statusLabel.text = "该条件下没有可推荐的影片"
                 }
+            case .failure(let error):
+                self.statusLabel.text = error.localizedDescription
             }
+        } operation: { settle in
+            provider.category(id: "", page: 1, extend: extend) { settle($0) }
         }
     }
 }

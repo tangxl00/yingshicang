@@ -508,9 +508,11 @@ final class Build24RegressionTests: XCTestCase {
 
     func testType3SitesEnterJSSiteProvider() {
         let bundle = ConfigParser.parse(text: Self.lichengJSON)
-        let type3NoJar = bundle.sites.first { $0.type == 3 && !$0.isJarSpider }
-        guard let site = type3NoJar else {
-            return XCTFail("配置里应有 type 3 且非 jar 的站点")
+        // build 25：判定口径升级为 `isPlatformSupported`。旧写法只看 `.jar` 后缀，
+        // 会选中 `csp_DouDou` 这类「api 只有 Java 类名」的站点，而它现在正确地走显式不支持。
+        let type3Usable = bundle.sites.first { $0.type == 3 && $0.isPlatformSupported }
+        guard let site = type3Usable else {
+            return XCTFail("配置里应有 type 3 且 iOS 可用的站点")
         }
         XCTAssertTrue(SiteProviderFactory.make(site: site) is JSSiteProvider,
                       "type 3 站点必须进 JSSiteProvider，实际站点：\(site.key)")

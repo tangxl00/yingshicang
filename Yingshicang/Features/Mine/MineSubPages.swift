@@ -301,16 +301,25 @@ final class SiteManageViewController: SwipeBackViewController, UITableViewDataSo
         let site = sites[indexPath.row]
         cell.backgroundColor = .clear
         cell.selectionStyle = .none
+        // 可用性标识：jar 类站点在 iOS 上永远拿不到内容，必须显式标出来
+        // 并同时灰显（只靠颜色不行，文字标识才是无障碍与截图沟通都成立的载体）。
+        let usable = site.isPlatformSupported
         var label = site.displayName
-        if site.isJarSpider { label += "（jar·iOS 不支持）" }
+        if !usable { label += "（jar 插件·iOS 不支持）" }
         cell.textLabel?.text = label
-        cell.textLabel?.textColor = SiteBlockStore.shared.isBlocked(site.key) ? DesignTokens.Colors.text : .white
+        if !usable {
+            cell.textLabel?.textColor = DesignTokens.Colors.gray
+        } else {
+            cell.textLabel?.textColor = SiteBlockStore.shared.isBlocked(site.key) ? DesignTokens.Colors.text : .white
+        }
         cell.textLabel?.font = .systemFont(ofSize: DesignTokens.sp(DesignTokens.Metrics.siteItemFont))
 
         let toggle = UISwitch()
         toggle.onTintColor = DesignTokens.Colors.main
+        // 不可用站点本来就不会进入搜索管道，开关没有实际作用，置灰避免误导。
+        toggle.isEnabled = usable
         // 开关语义与 Android 对齐：开=参与搜索/展示，关=屏蔽
-        toggle.isOn = !SiteBlockStore.shared.isBlocked(site.key)
+        toggle.isOn = usable && !SiteBlockStore.shared.isBlocked(site.key)
         toggle.tag = indexPath.row
         toggle.addTarget(self, action: #selector(toggleSite(_:)), for: .valueChanged)
         cell.accessoryView = toggle

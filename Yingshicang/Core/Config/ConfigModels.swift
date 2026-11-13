@@ -43,9 +43,39 @@ struct SiteConfig: Codable, Equatable {
     var ruleDetail: String
     var ruleSearch: String
 
+    /// 站点级 jar 声明判定（build 24 既有语义，保持不漂移）。
+    ///
+    /// **这不是 iOS 可用性的唯一口径**：TVBox 生态里真实配置（如 raw.liucn.cc/box/m.json）
+    /// 把 jar 包声明在**顶层 `spider`**（`./fty.jar;md5;…`），站点 `api` 只写 jar 内的
+    /// **Java 类名**（`csp_DouDou` / `py_qie`）——这类值不带 `.jar` 后缀，
+    /// 旧判定会把它当成普通站点放行，进而交给 JS/API Provider 去请求一个类名字符串，
+    /// 表现为首屏无限加载。平台可用性判定统一走下方的 `spiderKind` / `isPlatformSupported`。
     var isJarSpider: Bool {
         jar.lowercased().hasSuffix(".jar") || api.lowercased().hasSuffix(".jar")
     }
+
+    /// 爬虫实现形态：iOS 平台可用性与 Provider 路由的**唯一事实源**。
+    ///
+    /// 判定只看站点自身 `api` 的形态，不看站点级 `jar`：
+    /// - `https://…/api.php/provide/vod/` → 采集站 JSON 接口（可用）
+    /// - `./libs/js/drpy2.min.js` / `https://…/x.js` → JS 脚本源（可用）
+    /// - `csp_DouDou` / `py_qie` / `xxx.jar` → jar 内 Java 类，iOS 无 JVM（不可用）
+    var spiderKind: SiteSpiderKind {
+        let raw = api.trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty { return .htmlRule }
+        let lower = raw.lowercased()
+        if lower.hasSuffix(".jar") { return .jarClass }
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
+            return lower.hasSuffix(".js") ? .jsScript : .httpAPI
+        }
+        // 相对路径脚本（`./libs/tv/zb.min.js` 等）在 App 内以远端/内置脚本解析。
+        if lower.hasSuffix(".js") || raw.contains("/") { return .jsScript }
+        // 裸标识符：jar 包内的 Java 类名。
+        return .jarClass
+    }
+
+    /// 该站点在 iOS 上能否真实加载内容。
+    var isPlatformSupported: Bool { spiderKind != .jarClass }
 
     /// 是否可参与全局搜索（searchable 为 2 表示启用；1 的语义在文档中标为待确认，
     /// 本工程按「1 与 2 均参与」实现并列入默认取值清单）。
@@ -122,6 +152,29 @@ extension SiteConfig {
         try c.encode(ruleHome, forKey: FlexKey("一级"))
         try c.encode(ruleDetail, forKey: FlexKey("二级"))
         try c.encode(ruleSearch, forKey: FlexKey("搜索"))
+    }
+}
+
+/// 站点的爬虫实现形态。iOS 侧据此决定路由与可用性，
+/// 是「默认站点选择 / 站点列表标识 / Provider 路由」三处共用的唯一口径。
+enum SiteSpiderKind: Equatable {
+    /// type=0 的 HTML 规则站（无脚本、无接口）。
+    case htmlRule
+    /// 采集站 JSON 接口（`api` 为 http(s) 地址，非 .js）。
+    case httpAPI
+    /// JS 爬虫脚本（`api` 为 .js 路径，相对或绝对）。
+    case jsScript
+    /// jar 包内 Java 类（`csp_*` / `py_*` / `.jar`）。iOS 无 JVM，平台级不可用。
+    case jarClass
+
+    /// 面向用户的形态说明（站点列表标识与错误提示共用）。
+    var displayName: String {
+        switch self {
+        case .htmlRule: return "HTML 规则"
+        case .httpAPI: return "JSON 接口"
+        case .jsScript: return "JS 脚本"
+        case .jarClass: return "jar 插件"
+        }
     }
 }
 

@@ -11,6 +11,12 @@ final class CategoryContentViewController: SwipeBackViewController {
     private let collectionView: UICollectionView
     private let statusLabel = UILabel.make(size: 13, color: DesignTokens.Colors.text, lines: 0)
     private let activity = UIActivityIndicatorView(style: .medium)
+    /// 失败态的出口：可恢复错误给「重试」，平台不支持给「切换站点」。
+    /// 只展示文字而不给出口，等同于把用户留在死页面上。
+    private let retryButton = UIButton.text("重试", size: 14, color: .white)
+    private let switchSiteButton = UIButton.text("切换站点", size: 14, color: .white)
+    /// 平台不支持时请求宿主打开站点切换列表（由 HomeViewController 接）。
+    var onRequestSwitchSite: (() -> Void)?
 
     private let site: SiteConfig?
     private let categoryId: String
@@ -23,6 +29,8 @@ final class CategoryContentViewController: SwipeBackViewController {
     private var page = 0
     private var isLoading = false
     private var reachedEnd = false
+    /// 失败态是否由「平台不支持」造成（决定是否给出切换站点入口）。
+    private var failedByUnsupportedSite = false
     /// R-06 当前筛选的 extend 参数（已剔除空值），空 = 未筛选。
     private var activeExtend: [String: String] = [:]
     /// R-06 悬浮筛选入口（右上角）：仅当站点声明 filterable 且筛选项解析非空时显示。
@@ -68,6 +76,17 @@ final class CategoryContentViewController: SwipeBackViewController {
         activity.hidesWhenStopped = true
         view.addSubview(activity)
 
+        // 失败出口：重试 / 切换站点（默认都隐藏，只在对应失败态出现）。
+        for button in [retryButton, switchSiteButton] {
+            button.backgroundColor = DesignTokens.Colors.dialog
+            button.layer.cornerRadius = DesignTokens.dp(DesignTokens.Metrics.confirmButtonCorner)
+            button.layer.masksToBounds = true
+            button.isHidden = true
+            view.addSubview(button)
+        }
+        retryButton.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
+        switchSiteButton.addTarget(self, action: #selector(switchSiteTapped), for: .touchUpInside)
+
         // R-06 悬浮筛选入口：右上角胶囊按钮，只在站点有筛选项时出现。
         filterButton.setTitle(" 筛选 ", for: .normal)
         filterButton.setTitleColor(.white, for: .normal)
@@ -87,6 +106,15 @@ final class CategoryContentViewController: SwipeBackViewController {
             statusLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.dp(24)),
             statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.dp(24)),
+            // 两个出口按钮并排挂在状态文案下方。
+            retryButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: DesignTokens.dp(16)),
+            retryButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: -DesignTokens.dp(52)),
+            retryButton.widthAnchor.constraint(equalToConstant: DesignTokens.dp(96)),
+            retryButton.heightAnchor.constraint(equalToConstant: DesignTokens.dp(32)),
+            switchSiteButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: DesignTokens.dp(16)),
+            switchSiteButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: DesignTokens.dp(52)),
+            switchSiteButton.widthAnchor.constraint(equalToConstant: DesignTokens.dp(96)),
+            switchSiteButton.heightAnchor.constraint(equalToConstant: DesignTokens.dp(32)),
             activity.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activity.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             filterButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: DesignTokens.dp(8)),
@@ -114,32 +142,64 @@ final class CategoryContentViewController: SwipeBackViewController {
         if items.isEmpty { activity.startAnimating() }
 
         let nextPage = page + 1
-        provider.category(id: categoryId, page: nextPage, extend: activeExtend) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.isLoading = false
-                self.activity.stopAnimating()
-                switch result {
-                case .success(let list):
-                    self.page = nextPage
-                    if list.isEmpty { self.reachedEnd = true }
-                    self.items.append(contentsOf: list)
-                    self.collectionView.reloadData()
-                    if self.items.isEmpty { self.showStatus("暂无内容") }
-                case .failure(let error):
-                    if self.items.isEmpty {
-                        self.showStatus(error.localizedDescription ?? "加载失败")
-                    } else {
-                        self.reachedEnd = true
-                    }
+        // 统一经 SiteLoad：Provider 就算永不回调（jar 类名、脚本卡死、请求挂起），
+        // 也会在期限内落到 .timeout，界面拿到确定的失败态而不是一直转圈。
+        SiteLoad.run { [weak self] result in
+            guard let self = self else { return }
+            self.isLoading = false
+            self.activity.stopAnimating()
+            switch result {
+            case .success(let list):
+                self.failedByUnsupportedSite = false
+                self.page = nextPage
+                if list.isEmpty { self.reachedEnd = true }
+                self.items.append(contentsOf: list)
+                self.collectionView.reloadData()
+                if self.items.isEmpty { self.showStatus("暂无内容") }
+            case .failure(let error):
+                let unsupported = Self.isUnsupported(error)
+                self.failedByUnsupportedSite = unsupported
+                if self.items.isEmpty {
+                    self.showStatus(error.localizedDescription ?? "加载失败",
+                                    retryable: !unsupported,
+                                    switchable: unsupported)
+                } else {
+                    self.reachedEnd = true
                 }
+            }
+        } operation: { settle in
+            provider.category(id: self.categoryId, page: nextPage, extend: self.activeExtend) { result in
+                settle(result)
             }
         }
     }
 
-    private func showStatus(_ text: String) {
+    /// 平台不支持是终态：不提供「重试」，只提供「切换站点」。
+    static func isUnsupported(_ error: SiteError) -> Bool {
+        if case .unsupportedJar = error { return true }
+        return false
+    }
+
+    /// 展示状态。`retryable` 时挂重试按钮，`switchable` 时挂切换站点入口，
+    /// 两者都不给就等于把用户钉在死页面上。
+    private func showStatus(_ text: String, retryable: Bool = false, switchable: Bool = false) {
         statusLabel.text = text
         statusLabel.isHidden = false
+        retryButton.isHidden = !retryable
+        switchSiteButton.isHidden = !switchable
+    }
+
+    @objc private func retryTapped() {
+        guard !isLoading else { return }
+        statusLabel.isHidden = true
+        retryButton.isHidden = true
+        switchSiteButton.isHidden = true
+        reachedEnd = false
+        loadNextPage()
+    }
+
+    @objc private func switchSiteTapped() {
+        onRequestSwitchSite?()
     }
 
     // MARK: - R-06 筛选

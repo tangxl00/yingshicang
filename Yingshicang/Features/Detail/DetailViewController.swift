@@ -276,18 +276,19 @@ final class DetailViewController: SwipeBackViewController {
         }
         statusLabel.text = "加载中…"
         statusLabel.isHidden = false
-        provider.detail(id: item.vodId) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                switch result {
-                case .success(let detail):
-                    self.statusLabel.isHidden = true
-                    self.apply(detail)
-                case .failure(let error):
-                    self.statusLabel.text = error.localizedDescription ?? "详情加载失败"
-                    self.statusLabel.isHidden = false
-                }
+        // 详情链路同样受期限保护：Provider 不回调时不能把「加载中…」永久留在页面上。
+        SiteLoad.run { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let detail):
+                self.statusLabel.isHidden = true
+                self.apply(detail)
+            case .failure(let error):
+                self.statusLabel.text = error.localizedDescription ?? "详情加载失败"
+                self.statusLabel.isHidden = false
             }
+        } operation: { settle in
+            provider.detail(id: item.vodId) { settle($0) }
         }
     }
 

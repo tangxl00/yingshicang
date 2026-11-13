@@ -72,21 +72,26 @@ final class RankListViewController: SwipeBackViewController,
     private func loadRank() {
         activity.startAnimating()
         statusLabel.isHidden = false
-        provider?.home { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.activity.stopAnimating()
-                switch result {
-                case .success(let list):
-                    self.items = Array(list.prefix(RankListViewController.rankLimit))
-                    self.statusLabel.isHidden = !self.items.isEmpty
-                    if self.items.isEmpty { self.statusLabel.text = "该站点没有可展示的榜单数据" }
-                    self.tableView.reloadData()
-                case .failure(let error):
-                    self.statusLabel.isHidden = false
-                    self.statusLabel.text = error.localizedDescription
-                }
+        guard let provider = provider else {
+            activity.stopAnimating()
+            statusLabel.text = "当前没有可用站点，无法加载榜单"
+            return
+        }
+        SiteLoad.run { [weak self] result in
+            guard let self = self else { return }
+            self.activity.stopAnimating()
+            switch result {
+            case .success(let list):
+                self.items = Array(list.prefix(RankListViewController.rankLimit))
+                self.statusLabel.isHidden = !self.items.isEmpty
+                if self.items.isEmpty { self.statusLabel.text = "该站点没有可展示的榜单数据" }
+                self.tableView.reloadData()
+            case .failure(let error):
+                self.statusLabel.isHidden = false
+                self.statusLabel.text = error.localizedDescription
             }
+        } operation: { settle in
+            provider.home { settle($0) }
         }
     }
 

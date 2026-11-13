@@ -104,8 +104,8 @@ final class JSSiteProvider: SiteProvider {
     // MARK: - SiteProvider
 
     func home(completion: @escaping (Result<[VodItem], SiteError>) -> Void) {
-        invoke(method: "home", params: [:], completion: completion) { [weak self] value in
-            self?.parseVodList(value) ?? []
+        invoke(method: "home", params: [:], completion: completion) { value in
+            self.parseVodList(value)
         }
     }
 
@@ -129,16 +129,15 @@ final class JSSiteProvider: SiteProvider {
         params["tid"] = id
         params["fyclass"] = id
         if !extend.isEmpty { params["filters"] = extend }
-        invoke(method: "category", params: params, completion: completion) { [weak self] value in
-            self?.parseVodList(value) ?? []
+        invoke(method: "category", params: params, completion: completion) { value in
+            self.parseVodList(value)
         }
     }
 
     func detail(id: String, completion: @escaping (Result<VodDetail, SiteError>) -> Void) {
         var params: [String: Any] = ["id": id]
         params["ids"] = id
-        invokeRaw(method: "detail", params: params) { [weak self] result in
-            guard let self = self else { return }
+        invokeRaw(method: "detail", params: params) { result in
             switch result {
             case .failure(let error): completion(.failure(error))
             case .success(let value):
@@ -154,8 +153,8 @@ final class JSSiteProvider: SiteProvider {
     func search(keyword: String, page: Int, completion: @escaping (Result<[VodItem], SiteError>) -> Void) {
         var params: [String: Any] = ["wd": keyword, "quick": 0]
         params["page"] = page
-        invoke(method: "search", params: params, completion: completion) { [weak self] value in
-            self?.parseVodList(value) ?? []
+        invoke(method: "search", params: params, completion: completion) { value in
+            self.parseVodList(value)
         }
     }
 
@@ -197,8 +196,10 @@ final class JSSiteProvider: SiteProvider {
     private func invokeRaw(method: String,
                            params: [String: Any],
                            completion: @escaping (Result<Any?, SiteError>) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
+        // 强引用 self：此前的 `[weak self] + guard else return` 在调用方不持有 provider 时
+        // 会**直接丢弃 completion**——既不回调成功也不回调失败，上层永远停在 loading
+        // （这是 P0「主页无限转圈」的第二个独立成因，与 jar 站点无关）。
+        DispatchQueue.global(qos: .userInitiated).async {
             guard self.ensureScriptLoaded() else {
                 completion(.failure(.parse("脚本装载失败")))
                 return

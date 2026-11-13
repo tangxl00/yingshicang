@@ -262,10 +262,13 @@ final class SearchViewController: SwipeBackViewController, UITextFieldDelegate {
     /// 聚合搜索：并行请求所有可搜索站点，按 searchThreadCount 限流。
     /// 站点失败不中断整体（单源失败只影响该源结果），全部失败才提示。
 
-    /// 搜索前站点过滤（可测纯函数）：可搜、非 jar 爬虫、未被屏蔽。
+    /// 搜索前站点过滤（可测纯函数）：可搜、iOS 平台可用、未被屏蔽。
+    /// 判定走 `isPlatformSupported`（`SiteConfig.spiderKind`），而不是 `.jar` 后缀——
+    /// 真实配置的 jar 声明在顶层 `spider`，站点 `api` 只写 jar 内的 Java 类名（`csp_*`），
+    /// 按后缀判定的旧实现会把这些站点放进搜索管道，必然全部失败。
     /// performSearch 与回归测试共用同一实现——测试不得内联重复过滤逻辑自证。
     static func searchableSites(_ sites: [SiteConfig]) -> [SiteConfig] {
-        sites.filter { $0.canSearch && !$0.isJarSpider && !SiteBlockStore.shared.isBlocked($0.key) }
+        sites.filter { $0.canSearch && $0.isPlatformSupported && !SiteBlockStore.shared.isBlocked($0.key) }
     }
 
     private func performSearch(_ raw: String) {
@@ -285,7 +288,7 @@ final class SearchViewController: SwipeBackViewController, UITextFieldDelegate {
 
         let sites = SearchViewController.searchableSites(ConfigRepository.shared.currentBundle.sites)
         guard !sites.isEmpty else {
-            statusLabel.text = "没有可搜索的站点\n若配置中站点均为 jar 爬虫，iOS 无法运行（无 Java 环境）"
+            statusLabel.text = "没有可搜索的站点\n配置中的站点均依赖 jar 插件或已被屏蔽（iOS 无 Java 运行环境）"
             return
         }
 
@@ -300,7 +303,10 @@ final class SearchViewController: SwipeBackViewController, UITextFieldDelegate {
             semaphore.wait()
             group.enter()
             let provider = SiteProviderFactory.make(site: site)
-            provider.search(keyword: word, page: 1) { result in
+            // 逐站点超时兜底：任一 Provider 永不回调（脚本卡死 / 请求挂起 / 实例已释放）
+            // 都会让 group.leave() 永远不执行，整轮搜索挂在「搜索中…」。
+            // 包一层守卫后，每个站点最终都会落到一个结果（含 .timeout），组一定会闭合成。
+            SiteLoad.run { result in
                 lock.lock()
                 switch result {
                 case .success(let list):
@@ -313,6 +319,8 @@ final class SearchViewController: SwipeBackViewController, UITextFieldDelegate {
                 lock.unlock()
                 semaphore.signal()
                 group.leave()
+            } operation: { settle in
+                provider.search(keyword: word, page: 1) { settle($0) }
             }
         }
 
