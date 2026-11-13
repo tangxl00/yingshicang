@@ -143,3 +143,25 @@ build 23 相比 build 22 的五个「部分」全部转「已实现」：R-39 �
 - **随冒烟加固**：`looksLikeJSObject` 判据加入反引号 —— 只有模板字符串（无单引号）的输入也能进入 JS 字面量分支、如实报「含模板字符串」，而不是落到无关的 JSON 语法错误。
 - **测试** `Tests/Build25ConfigFormatRegressionTests.swift` 13 条用例（与另一条 build25 工作线的 `Build25RegressionTests.swift` 并存，类名不冲突）；fixture 为 4 份真实样本原样落盘 `Tests/Fixtures/`（folder reference 进测试 bundle，`project.yml` 已声明）。全部断言已在本地 Linux 全链路（Swift 6.1.2 + libcrypto AES）逐条预验证后推 CI。
 - **版本**：`CURRENT_PROJECT_VERSION` 24 → 25。
+
+## 五、build 25（P0：主页无限加载）
+
+### 现象与根因
+
+build 24 真机：配置加载成功后进主页，只有左上角一个加载圈永不结束，无超时、无报错、无兜底。**两处独立成因**（均由 `Build25RegressionTests` 逐条固化为可证伪断言）：
+
+1. **站点形态判定错**：真实配置（`https://raw.liucn.cc/box/m.json`，234 站点）把 jar 包声明在**顶层 `spider`**（`./fty.jar;md5;…`），站点 `api` 只写 jar 内的 Java 类名（`csp_DouDou`）。旧 `isJarSpider` 只看 `.jar` 后缀 → 只认出 108 个；工厂又把 `csp_` 前缀路由给 `APISiteProvider` → 默认首站 `csp_douban` 必然去请求一个类名字符串，拿不到内容也不回调。实测口径：**168 个 jar 类**（165 `csp_*` + 3 裸 `py_*`）+ 51 个 `.js` + 15 个 http 接口，iOS 可用 66 个；旧判定放行的 126 个里有 **61 个其实不可用**。
+2. **Provider 回调被丢弃**：`JSSiteProvider.invokeRaw` 用 `[weak self] + guard else return`，调用方不持有 provider 时 completion 被直接丢弃（既无成功也无失败）——与 jar 站点无关的第二条挂起路径。
+
+### 修复
+
+- `SiteConfig.spiderKind`（`htmlRule` / `httpAPI` / `jsScript` / `jarClass`）与 `isPlatformSupported` 成为**唯一事实源**，同时驱动 Provider 路由、默认站点选择、搜索候选集、站点列表标识四处。
+- 新增 `Core/Parsing/LoadGuard.swift`：`SiteLoad.run` 给每次站点加载 20 秒硬期限，首次 settle 生效、迟到结果丢弃；Home / Category / Search / Detail / Rank / ConditionFilter 六处全部接入。
+- 错误出口分离：`unsupportedJar` 为终态 → 给「切换站点」；`network` / `timeout` / `parse` → 给「重试」。
+- 新增 `Features/Home/SiteSwitchSheetViewController`：可用站点排前，不可用的灰显 + 「（jar 插件·iOS 不支持）」且不可点，顶部提示「共 234 个站点，其中 66 个在 iOS 可用」。
+- 全站不可用时主页直接显示说明与切换入口；摇一摇取源同样跳过 jar 站。
+
+### 验收
+
+- CI run `43425118681`（commit `60d0a24`）五段全绿；**原始 `xcodebuild-test.log` 口径**：`Executed 172 tests, with 2 tests skipped and 0 failures`，`** TEST SUCCEEDED **`，其中 `Build25RegressionTests` 14 例逐条 passed。
+- 免签 IPA：`CFBundleVersion=25`、`CFBundleShortVersionString=2.0.50`、`com.yingshicang.ios`、`MinimumOSVersion 15.0`，无 `embedded.mobileprovision`，主二进制 arm64 Mach-O。

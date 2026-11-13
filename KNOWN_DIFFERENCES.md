@@ -24,7 +24,7 @@
 
 | 差异 | 说明 | 用户可见行为 |
 | --- | --- | --- |
-| jar 型站点 | iOS 无 JVM，无法运行 Java 爬虫扩展 | 站点列表标注「jar·iOS 不支持」，进入站点显式提示，不静默失败 |
+| jar 型站点（`csp_*` / `py_*` / `.jar`） | iOS 无 JVM，无法运行 Java 爬虫扩展 | 站点列表灰显并标注「jar 插件·iOS 不支持」且不可点；默认站点选择跳过它们；即使被选中也会**同步立即**返回「该站点依赖 jar 插件，iOS 不支持」并给「切换站点」入口，绝不无限加载 |
 | VLC 播放内核 | build 23 起以 **VLCKit 4.0 官方 SPM 包**集成（`project.yml` pin `4.0.0-a25`，binaryTarget checksum `f37c8dbd…2f1fb`）；动态 framework 嵌入 `Frameworks/VLCKit.framework`，免签 IPA 内未签名属预期，侧载重签工具会整体重签 | mkv/rmvb/flv 等容器与 DTS/AC3 音轨由 VLCKit 真实播放；`PlaybackRouter` 按容器后缀 + AVAsset 可播性路由，失败显式报错不静默降级 |
 | 本地视频导入 | iOS 沙箱限制，无法像 Android 一样扫描文件系统 | 「本地数据」页说明受限 |
 | 应用内自更新 | App Store / 企业签分发模型下无 Android 式自更新通道 | 「检查更新」页说明 iOS 无自更新通道 |
@@ -49,8 +49,8 @@ Codable 将其作为未知键静默跳过——**加载含 `lives` 的配置不�
 
 - 主色 `main = #00C64E`，主背景 `mainBg = #001A37`（ARGB 实测自 APK resources.arsc）
 - 持久化键名：`tpc_stores` / `tpc_current_line` / `tpc_settings.*` / `tpc_search_history`（UserDefaults；数据库表 favorite / history / lanDevice / blockedSite 对齐 Room）
-- 站点 type 路由：0=HTML 解析、1=JSON API、3=JS 爬虫；`csp_` 前缀按 API 处理；jar → Unsupported
-- 搜索参与条件：`searchable > 0` 且非 jar 且未被用户屏蔽；聚合线程数取 `searchThreadCount`（上限 8）
+- 站点路由（build 25 起）：不再按 `type` + 前缀猜，改由 `SiteConfig.spiderKind` 单一事实源判定——`http(s)://…` 非 .js = JSON 接口、`.js`（相对或绝对）= JS 脚本、**裸 Java 类名（`csp_*` / `py_*`）或 `.jar` = jar 类 → Unsupported（iOS 无 JVM）**。真实配置（`raw.liucn.cc/box/m.json`，234 站点）把 jar 包声明在**顶层 `spider`**（`./fty.jar;md5;…`），站点 `api` 只写类名，因此「带 jar 字段才算 jar」的旧口径会漏判 61 个站点——那正是 build 24 首屏无限转圈的成因
+- 搜索参与条件：`searchable > 0` 且 `isPlatformSupported`（非 jar 类）且未被用户屏蔽；聚合线程数取 `searchThreadCount`（上限 8）；每个站点的搜索请求都套 20 秒加载守卫
 - dp→pt 按 1:1 换算（160dpi 基准），全部经 `DesignTokens/Metrics` 统一驱动
 
 ## 隐私声明 / ATS / 后台音频的取值口径（质检 P2-2）
