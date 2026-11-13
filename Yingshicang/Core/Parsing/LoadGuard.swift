@@ -1,5 +1,13 @@
 import Foundation
 
+/// 站点级加载的默认期限。TVBox 生态里采集站与脚本源通常在数秒内返回，
+/// 20 秒足够覆盖慢网；再长就会让用户误以为卡死。
+/// 放在泛型类之外：`LoadGuard<Value>.defaultTimeout` 这种「裸类型名 + 静态成员」
+/// 在模块发射阶段无法推断泛型参数（CI 实测报错），非泛型命名空间没有这个问题。
+enum SiteLoadDefaults {
+    static var timeout: TimeInterval { 20 }
+}
+
 /// 加载守卫：保证一次加载「一定会结束」且「只回调一次」。
 ///
 /// 存在两类会让界面永久挂起的失效模式，这里一并堵住：
@@ -13,10 +21,6 @@ import Foundation
 /// 底层请求是否仍在跑与界面状态无关，用户看到的是可操作的失败态。
 final class LoadGuard<Value> {
 
-    /// 站点级加载的默认期限。TVBox 生态里采集站与脚本源通常在数秒内返回，
-    /// 20 秒足够覆盖慢网；再长就会让用户误以为卡死。
-    static var defaultTimeout: TimeInterval { 20 }
-
     private let lock = NSLock()
     private var settled = false
     private var timeoutItem: DispatchWorkItem?
@@ -24,7 +28,7 @@ final class LoadGuard<Value> {
     private let deliveryQueue: DispatchQueue
     private let completion: (Result<Value, SiteError>) -> Void
 
-    init(timeout: TimeInterval = LoadGuard.defaultTimeout,
+    init(timeout: TimeInterval = SiteLoadDefaults.timeout,
          deliveryQueue: DispatchQueue = .main,
          completion: @escaping (Result<Value, SiteError>) -> Void) {
         self.timeout = timeout
@@ -73,7 +77,7 @@ final class LoadGuard<Value> {
 /// 都不会让界面无限转圈」。`operation` 拿到的是守卫的 settle 闭包，
 /// Provider 的结果必须交给它，而不是交给页面自己的 completion。
 enum SiteLoad {
-    static func run<Value>(timeout: TimeInterval = LoadGuard.defaultTimeout,
+    static func run<Value>(timeout: TimeInterval = SiteLoadDefaults.timeout,
                            completion: @escaping (Result<Value, SiteError>) -> Void,
                            operation: (@escaping (Result<Value, SiteError>) -> Void) -> Void) {
         let guardBox = LoadGuard<Value>(timeout: timeout, deliveryQueue: .main, completion: completion)
