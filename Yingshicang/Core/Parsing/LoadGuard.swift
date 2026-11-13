@@ -37,9 +37,13 @@ final class LoadGuard<Value> {
     }
 
     /// 启动期限计时。必须在调用下层加载之前调用。
+    ///
+    /// 计时块**强引用 self**：守卫必须活到期限为止——调用方（尤其 `SiteLoad.run` 的
+    /// operation 闭包被丢弃时）不保证持有守卫，`[weak self]` 会让守卫提前释放、
+    /// 超时永不触发（CI 实测：testNeverCallingProviderSettlesByTimeout 3 秒等不到回调）。
+    /// 代价是守卫最多存活到期限点；settle 时 `timeoutItem` 置 nil，引用链自然断开。
     func start() {
-        let item = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
+        let item = DispatchWorkItem {
             self.settle(.failure(.timeout(self.timeout)))
         }
         lock.lock()
